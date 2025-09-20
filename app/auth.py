@@ -1,14 +1,25 @@
 # app/auth.py
-
+import os
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
-from . import database, crud, models
-from .config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
+from bson import ObjectId
+from .database import db
+from dotenv import load_dotenv
+
+# Load .env
+load_dotenv()
+
+# -------------------------------
+# Environment variables
+# -------------------------------
+SECRET_KEY = os.getenv("SECRET_KEY", "supersecretkey123")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
 
 # -------------------------------
 # Password hashing
@@ -39,9 +50,9 @@ def create_refresh_token(data: dict) -> str:
 # -------------------------------
 # OAuth2 and current user dependency
 # -------------------------------
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/users/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/login")
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(database.get_db)) -> models.User:
+async def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
         status_code=401,
         detail="Could not validate credentials",
@@ -49,16 +60,25 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        identifier: str = payload.get("sub")  # could be email or WhatsApp
+        identifier: str = payload.get("sub")
         if identifier is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
 
-    # Check both email and WhatsApp
-    user = crud.get_user_by_email(db, email=identifier)
+    user = await db["users"].find_one({"email": identifier})
     if not user:
-        user = crud.get_user_by_whatsapp(db, whatsapp=identifier)
-    if user is None:
+        user = await db["users"].find_one({"whatsapp": identifier})
+    if not user:
         raise credentials_exception
     return user
+
+# -------------------------------
+# Role dependency helper
+# -------------------------------
+def require_role(required_roles: List[str]):
+    async def role_checker(user=Depends(get_current_user)):
+        if user.get("role") not in required_roles:
+            raise HTTPException(status_code=403, detail="Operation not permitted")
+        return user
+    return role_checker

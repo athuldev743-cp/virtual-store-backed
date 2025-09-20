@@ -3,7 +3,14 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
 load_dotenv()
-MONGO_URL = os.getenv("DATABASE_URL")
 
+MONGO_URL = os.getenv("MONGO_URL")
+
+# Create MongoDB client
 client = AsyncIOMotorClient(MONGO_URL)
-db = client.get_default_database()  # or client['mydatabase']
+
+# Explicitly select the database
+db = client["real_estate_db"]
+
+# Example usage:
+# await db["users"].insert_one({"name": "Test"})

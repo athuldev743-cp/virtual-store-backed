@@ -1,47 +1,26 @@
 # app/routers/store.py
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException, Depends, status
 from typing import List
-from .. import schemas, crud, database, auth, models
+from app.database import db
+from app import schemas, auth
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
-from twilio.rest import Client
+from bson import ObjectId
 import logging
 
-router = APIRouter()
+# Import the safe Twilio utility
+from app.utils.twilio_utils import send_whatsapp
+
+router = APIRouter(prefix="/store", tags=["Store"])
 
 # -------------------------
-# OAuth2 / JWT
+# OAuth2 / JWT and role functions (same as before)
 # -------------------------
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/users/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/login")
 SECRET_KEY = auth.SECRET_KEY
 ALGORITHM = auth.ALGORITHM
 
-# -------------------------
-# Twilio WhatsApp
-# -------------------------
-TWILIO_SID = "your_twilio_sid"
-TWILIO_AUTH_TOKEN = "your_twilio_auth_token"
-TWILIO_WHATSAPP_NUMBER = "whatsapp:+14155238886"
-
-def send_whatsapp(to: str, message: str):
-    """Send WhatsApp message via Twilio"""
-    if not to:
-        return
-    try:
-        client = Client(TWILIO_SID, TWILIO_AUTH_TOKEN)
-        client.messages.create(
-            from_=TWILIO_WHATSAPP_NUMBER,
-            body=message,
-            to=f"whatsapp:{to}"
-        )
-    except Exception as e:
-        logging.error(f"Failed to send WhatsApp message: {e}")
-
-# -------------------------
-# Dependencies
-# -------------------------
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(database.get_db)) -> models.User:
+async def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -55,171 +34,205 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     except JWTError:
         raise credentials_exception
 
-    # Try email first, then WhatsApp
-    user = crud.get_user_by_email(db, identifier) or crud.get_user_by_whatsapp(db, identifier)
+    user = await db["users"].find_one({"$or": [{"email": identifier}, {"whatsapp": identifier}]})
     if not user:
         raise credentials_exception
     return user
 
 def require_role(required_roles: List[str]):
-    def role_checker(user: models.User = Depends(get_current_user)):
-        if user.role not in required_roles:
+    async def role_checker(user=Depends(get_current_user)):
+        if user.get("role") not in required_roles:
             raise HTTPException(status_code=403, detail="Operation not permitted")
         return user
     return role_checker
 
 # -------------------------
+# Customer endpoint: place order
+# -------------------------
+@router.post("/orders", response_model=schemas.OrderOut)
+async def place_order(order_data: schemas.OrderCreate, user=Depends(require_role(["customer"]))):
+    product = await db["products"].find_one({"_id": ObjectId(order_data.product_id)})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if product["stock"] < order_data.quantity:
+        raise HTTPException(status_code=400, detail="Insufficient stock")
+
+    total_price = product["price"] * order_data.quantity
+    order_doc = {
+        "customer_id": str(user["_id"]),
+        "vendor_id": str(product["vendor_id"]),
+        "product_id": str(product["_id"]),
+        "quantity": order_data.quantity,
+        "total_price": total_price,
+        "status": "pending"
+    }
+    result = await db["orders"].insert_one(order_doc)
+
+    # Decrease product stock
+    await db["products"].update_one(
+        {"_id": product["_id"]},
+        {"$inc": {"stock": -order_data.quantity}}
+    )
+
+    # WhatsApp notification to vendor using retry-safe utility
+    vendor = await db["vendors"].find_one({"_id": product["vendor_id"]})
+    if vendor and vendor.get("whatsapp"):
+        message = (
+            f"New order from {user.get('email') or user.get('whatsapp')}: "
+            f"{order_data.quantity} x {product['name']}. Total: {total_price}. "
+            f"Remaining stock: {product['stock'] - order_data.quantity}"
+        )
+        send_whatsapp(vendor.get("whatsapp"), message)  # now uses twilio_utils
+
+    return {**order_doc, "id": str(result.inserted_id)}
+
+
+# -------------------------
 # Customer Endpoints
 # -------------------------
 @router.get("/products", response_model=List[schemas.ProductOut])
-def list_products(db: Session = Depends(database.get_db)):
-    return crud.list_products(db)
+async def list_products():
+    products_cursor = db["products"].find()
+    products = []
+    async for p in products_cursor:
+        p["id"] = str(p["_id"])
+        products.append(p)
+    return products
 
 @router.post("/orders", response_model=schemas.OrderOut)
-def place_order(
-    order_data: schemas.OrderCreate,
-    user: models.User = Depends(require_role(["customer"])),
-    db: Session = Depends(database.get_db)
-):
-    order, msg = crud.create_order(db, user, order_data.product_id, order_data.quantity)
-    if not order:
-        raise HTTPException(status_code=400, detail=msg)
+async def place_order(order_data: schemas.OrderCreate, user=Depends(require_role(["customer"]))):
+    product = await db["products"].find_one({"_id": ObjectId(order_data.product_id)})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if product["stock"] < order_data.quantity:
+        raise HTTPException(status_code=400, detail="Insufficient stock")
+
+    total_price = product["price"] * order_data.quantity
+    order_doc = {
+        "customer_id": str(user["_id"]),
+        "vendor_id": str(product["vendor_id"]),
+        "product_id": str(product["_id"]),
+        "quantity": order_data.quantity,
+        "total_price": total_price,
+        "status": "pending"
+    }
+    result = await db["orders"].insert_one(order_doc)
+
+    # Decrease product stock
+    await db["products"].update_one(
+        {"_id": product["_id"]},
+        {"$inc": {"stock": -order_data.quantity}}
+    )
 
     # WhatsApp notification to vendor
-    vendor = db.query(models.Vendor).filter(models.Vendor.id == order.vendor_id).first()
-    if vendor and getattr(vendor.user, "whatsapp", None):
+    vendor = await db["vendors"].find_one({"_id": product["vendor_id"]})
+    if vendor and vendor.get("whatsapp"):
         message = (
-            f"New order from {user.username}: {order.quantity} x {order.product.name}. "
-            f"Total: {order.total_price}. Remaining stock: {order.product.stock}"
+            f"New order from {user.get('email') or user.get('whatsapp')}: "
+            f"{order_data.quantity} x {product['name']}. Total: {total_price}. "
+            f"Remaining stock: {product['stock'] - order_data.quantity}"
         )
-        send_whatsapp(vendor.user.whatsapp, message)
+        send_whatsapp(vendor.get("whatsapp"), message)
 
-    return order
+    return {**order_doc, "id": str(result.inserted_id)}
 
 # -------------------------
 # Vendor Endpoints
 # -------------------------
 @router.post("/apply-vendor", response_model=schemas.VendorOut)
-def apply_vendor(
-    vendor_data: schemas.VendorCreate,
-    db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    vendor, msg = crud.apply_vendor(db, current_user, vendor_data)
-    if not vendor:
-        raise HTTPException(status_code=400, detail=msg)
-    return vendor
+async def apply_vendor(vendor_data: schemas.VendorCreate, current_user=Depends(get_current_user)):
+    existing_vendor = await db["vendors"].find_one({"user_id": str(current_user["_id"])})
+    if existing_vendor:
+        raise HTTPException(status_code=400, detail="Already applied")
+    vendor_doc = {**vendor_data.dict(), "user_id": str(current_user["_id"]), "status": "pending"}
+    result = await db["vendors"].insert_one(vendor_doc)
+    return {**vendor_doc, "id": str(result.inserted_id)}
 
 @router.post("/products", response_model=schemas.ProductOut)
-def create_product(
-    product: schemas.ProductCreate,
-    user: models.User = Depends(require_role(["vendor"])),
-    db: Session = Depends(database.get_db)
-):
-    vendor = db.query(models.Vendor).filter(
-        models.Vendor.user_id == user.id, models.Vendor.status == "approved"
-    ).first()
+async def create_product(product: schemas.ProductCreate, user=Depends(require_role(["vendor"]))):
+    vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
     if not vendor:
         raise HTTPException(status_code=403, detail="Vendor not approved")
-    return crud.create_product(db, product, vendor.id)
+    product_doc = {**product.dict(), "vendor_id": vendor["_id"]}
+    result = await db["products"].insert_one(product_doc)
+    return {**product_doc, "id": str(result.inserted_id)}
 
 @router.put("/products/{product_id}", response_model=schemas.ProductOut)
-def update_product(
-    product_id: int,
-    product: schemas.ProductCreate,
-    user: models.User = Depends(require_role(["vendor"])),
-    db: Session = Depends(database.get_db)
-):
-    vendor = db.query(models.Vendor).filter(
-        models.Vendor.user_id == user.id, models.Vendor.status == "approved"
-    ).first()
+async def update_product(product_id: str, product: schemas.ProductCreate, user=Depends(require_role(["vendor"]))):
+    vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
     if not vendor:
         raise HTTPException(status_code=403, detail="Vendor not approved")
-    db_product = db.query(models.Product).filter(
-        models.Product.id == product_id, models.Product.vendor_id == vendor.id
-    ).first()
+    db_product = await db["products"].find_one({"_id": ObjectId(product_id), "vendor_id": vendor["_id"]})
     if not db_product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    db_product.name = product.name
-    db_product.description = product.description
-    db_product.price = product.price
-    db_product.stock = product.stock
-    db.commit()
-    db.refresh(db_product)
-    return db_product
+    await db["products"].update_one(
+        {"_id": db_product["_id"]},
+        {"$set": product.dict()}
+    )
+    updated = await db["products"].find_one({"_id": db_product["_id"]})
+    updated["id"] = str(updated["_id"])
+    return updated
 
 @router.delete("/products/{product_id}")
-def delete_product(
-    product_id: int,
-    user: models.User = Depends(require_role(["vendor"])),
-    db: Session = Depends(database.get_db)
-):
-    vendor = db.query(models.Vendor).filter(
-        models.Vendor.user_id == user.id, models.Vendor.status == "approved"
-    ).first()
+async def delete_product(product_id: str, user=Depends(require_role(["vendor"]))):
+    vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
     if not vendor:
         raise HTTPException(status_code=403, detail="Vendor not approved")
-    db_product = db.query(models.Product).filter(
-        models.Product.id == product_id, models.Product.vendor_id == vendor.id
-    ).first()
+    db_product = await db["products"].find_one({"_id": ObjectId(product_id), "vendor_id": vendor["_id"]})
     if not db_product:
         raise HTTPException(status_code=404, detail="Product not found")
-    db.delete(db_product)
-    db.commit()
+    await db["products"].delete_one({"_id": db_product["_id"]})
     return {"detail": "Product deleted successfully"}
 
 # -------------------------
 # Admin Endpoints
 # -------------------------
 @router.get("/vendors/pending", response_model=List[schemas.VendorOut])
-def list_pending_vendors(
-    user: models.User = Depends(require_role(["admin"])),
-    db: Session = Depends(database.get_db)
-):
-    return db.query(models.Vendor).filter(models.Vendor.status == "pending").all()
+async def list_pending_vendors(user=Depends(require_role(["admin"]))):
+    vendors_cursor = db["vendors"].find({"status": "pending"})
+    vendors = []
+    async for v in vendors_cursor:
+        v["id"] = str(v["_id"])
+        vendors.append(v)
+    return vendors
 
 @router.post("/vendors/{vendor_id}/approve")
-def approve_vendor(
-    vendor_id: int,
-    user: models.User = Depends(require_role(["admin"])),
-    db: Session = Depends(database.get_db)
-):
-    vendor = db.query(models.Vendor).filter(models.Vendor.id == vendor_id).first()
+async def approve_vendor(vendor_id: str, user=Depends(require_role(["admin"]))):
+    vendor = await db["vendors"].find_one({"_id": ObjectId(vendor_id)})
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
-    vendor.status = "approved"
-    vendor.user.role = "vendor"
-    db.commit()
+    await db["vendors"].update_one({"_id": ObjectId(vendor_id)}, {"$set": {"status": "approved"}})
+    await db["users"].update_one({"_id": ObjectId(vendor["user_id"])}, {"$set": {"role": "vendor"}})
     return {"detail": f"Vendor {vendor_id} approved"}
 
 @router.post("/vendors/{vendor_id}/reject")
-def reject_vendor(
-    vendor_id: int,
-    user: models.User = Depends(require_role(["admin"])),
-    db: Session = Depends(database.get_db)
-):
-    vendor = db.query(models.Vendor).filter(models.Vendor.id == vendor_id).first()
+async def reject_vendor(vendor_id: str, user=Depends(require_role(["admin"]))):
+    vendor = await db["vendors"].find_one({"_id": ObjectId(vendor_id)})
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
-    vendor.status = "rejected"
-    db.commit()
+    await db["vendors"].update_one({"_id": ObjectId(vendor_id)}, {"$set": {"status": "rejected"}})
     return {"detail": f"Vendor {vendor_id} rejected"}
 
 # -------------------------
 # Orders history
 # -------------------------
 @router.get("/orders")
-def get_orders(
-    user: models.User = Depends(get_current_user),
-    db: Session = Depends(database.get_db)
-):
-    if user.role == "customer":
-        return db.query(models.Order).filter(models.Order.customer_id == user.id).all()
-    elif user.role == "vendor":
-        vendor = db.query(models.Vendor).filter(models.Vendor.user_id == user.id).first()
+async def get_orders(user=Depends(get_current_user)):
+    if user.get("role") == "customer":
+        orders_cursor = db["orders"].find({"customer_id": str(user["_id"])})
+    elif user.get("role") == "vendor":
+        vendor = await db["vendors"].find_one({"user_id": str(user["_id"])})
         if not vendor:
             return []
-        return db.query(models.Order).filter(models.Order.vendor_id == vendor.id).all()
-    elif user.role == "admin":
-        return db.query(models.Order).all()
+        orders_cursor = db["orders"].find({"vendor_id": str(vendor["_id"])})
+    elif user.get("role") == "admin":
+        orders_cursor = db["orders"].find()
+    else:
+        return []
+
+    orders = []
+    async for o in orders_cursor:
+        o["id"] = str(o["_id"])
+        orders.append(o)
+    return orders

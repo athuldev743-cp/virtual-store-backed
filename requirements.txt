@@ -9,3 +9,6 @@ python-multipart==0.0.20 # File uploads
 email-validator==2.1.0.post1
 httpx==0.28.1          # Async HTTP requests (optional)
 pytest==7.4.2           # Testing
+twilio==9.8.1
+redis==6.4.0
+ pydantic==2.11.7

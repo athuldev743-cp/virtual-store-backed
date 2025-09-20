@@ -1,96 +1,95 @@
-from sqlalchemy.orm import Session
-from . import models, schemas
-from passlib.context import CryptContext
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# app/crud.py
+from app import schemas, auth
+from app.database import db
+from bson import ObjectId
 
 # -------------------------
 # User
 # -------------------------
-def create_user(db: Session, user: schemas.UserCreate):
-    hashed_password = pwd_context.hash(user.password)
-    db_user = models.User(
-        username=user.username,
-        email=user.email.lower() if user.email else None,
-        whatsapp=user.whatsapp,
-        password=hashed_password,
-        role="Customer"
-    )
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
+async def create_user(user: schemas.UserCreate):
+    hashed_password = auth.hash_password(user.password)
+    user_doc = {
+        "username": user.username,
+        "email": user.email.lower() if user.email else None,
+        "whatsapp": user.whatsapp,
+        "password": hashed_password,
+        "role": "customer"
+    }
+    result = await db["users"].insert_one(user_doc)
+    user_doc["id"] = str(result.inserted_id)
+    return user_doc
 
+async def get_user_by_email(email: str):
+    return await db["users"].find_one({"email": email.lower()})
 
-def get_user_by_email(db: Session, email: str):
-    return db.query(models.User).filter(models.User.email == email).first()
-
-
-def get_user_by_whatsapp(db: Session, whatsapp: str):
-    return db.query(models.User).filter(models.User.whatsapp == whatsapp).first()
-
+async def get_user_by_whatsapp(whatsapp: str):
+    return await db["users"].find_one({"whatsapp": whatsapp})
 
 # -------------------------
 # Vendor
 # -------------------------
-def apply_vendor(db: Session, user: models.User, vendor_data: schemas.VendorCreate):
-    # Create vendor request
-    db_vendor = models.Vendor(
-        user_id=user.id,
-        shop_name=vendor_data.shop_name,
-        description=vendor_data.description,
-        status="pending"
-    )
-    db.add(db_vendor)
-    db.commit()
-    db.refresh(db_vendor)
-    return db_vendor, "Vendor application submitted"
-
+async def apply_vendor(user_id: str, vendor_data: schemas.VendorCreate):
+    existing = await db["vendors"].find_one({"user_id": user_id})
+    if existing:
+        return None, "Vendor application already exists"
+    
+    vendor_doc = {
+        "user_id": user_id,
+        "shop_name": vendor_data.shop_name,
+        "description": vendor_data.description,
+        "status": "pending"
+    }
+    result = await db["vendors"].insert_one(vendor_doc)
+    vendor_doc["id"] = str(result.inserted_id)
+    return vendor_doc, "Vendor application submitted"
 
 # -------------------------
 # Product
 # -------------------------
-def create_product(db: Session, product: schemas.ProductCreate, vendor_id: int):
-    db_product = models.Product(**product.model_dump(), vendor_id=vendor_id)
-    db.add(db_product)
-    db.commit()
-    db.refresh(db_product)
-    return db_product
-
+async def create_product(product: schemas.ProductCreate, vendor_id: str):
+    product_doc = {**product.dict(), "vendor_id": vendor_id}
+    result = await db["products"].insert_one(product_doc)
+    product_doc["id"] = str(result.inserted_id)
+    return product_doc
 
 # -------------------------
 # Order
 # -------------------------
-def create_order(db: Session, customer: models.User, product_id: int, quantity: int = 1):
-    product = db.query(models.Product).filter(models.Product.id == product_id).first()
+async def create_order(customer_id: str, product_id: str, quantity: int = 1):
+    product = await db["products"].find_one({"_id": ObjectId(product_id)})
     if not product:
         return None, "Product not found"
-    if product.stock < quantity:
+    if product["stock"] < quantity:
         return None, "Not enough stock"
 
-    product.stock -= quantity
-    db.commit()
-    db.refresh(product)
-
-    vendor = db.query(models.Vendor).filter(models.Vendor.id == product.vendor_id).first()
-    total_price = product.price * quantity
-
-    order = models.Order(
-        product_id=product.id,
-        customer_id=customer.id,
-        vendor_id=vendor.id,
-        quantity=quantity,
-        total_price=total_price
+    # Decrement stock
+    await db["products"].update_one(
+        {"_id": product["_id"]},
+        {"$inc": {"stock": -quantity}}
     )
-    db.add(order)
-    db.commit()
-    db.refresh(order)
 
-    return order, "Order placed successfully"
+    vendor = await db["vendors"].find_one({"_id": product["vendor_id"]})
+    total_price = product["price"] * quantity
 
+    order_doc = {
+        "product_id": str(product["_id"]),
+        "customer_id": customer_id,
+        "vendor_id": str(vendor["_id"]),
+        "quantity": quantity,
+        "total_price": total_price,
+        "status": "pending"
+    }
+    result = await db["orders"].insert_one(order_doc)
+    order_doc["id"] = str(result.inserted_id)
+    return order_doc, "Order placed successfully"
 
 # -------------------------
 # List products
 # -------------------------
-def list_products(db: Session):
-    return db.query(models.Product).all()
+async def list_products():
+    products_cursor = db["products"].find()
+    products = []
+    async for p in products_cursor:
+        p["id"] = str(p["_id"])
+        products.append(p)
+    return products
