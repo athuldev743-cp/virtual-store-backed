@@ -33,14 +33,20 @@ async def signup(user: schemas.UserCreate):
     user_dict = user.dict()
     user_dict["password"] = hashed_password
 
+    # Set default role
+    role = "customer"
+    user_dict["role"] = role
+
     # Insert user into MongoDB
     result = await db["users"].insert_one(user_dict)
+
     return {
         "id": str(result.inserted_id),
         "email": user.email,
         "whatsapp": user.whatsapp,
-        "role": user.role
+        "role": role  # <-- return the correct role
     }
+
 
 
 # -----------------------

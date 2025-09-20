@@ -1,4 +1,4 @@
-#app/schemas.py
+# app/schemas.py
 from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from typing import Optional
 
@@ -39,8 +39,8 @@ class UserLogin(BaseModel):
 
 
 class UserOut(BaseModel):
-    id: int
-    username: str
+    id: str                 # MongoDB ObjectId as string
+    username: Optional[str] = None
     email: Optional[EmailStr] = None
     whatsapp: Optional[str] = None
     role: str
@@ -67,7 +67,7 @@ class VendorCreate(BaseModel):
 
 
 class VendorOut(BaseModel):
-    id: int
+    id: str                # MongoDB ObjectId as string
     shop_name: str
     description: Optional[str] = None
     status: str  # pending, approved, rejected
@@ -88,7 +88,7 @@ class ProductCreate(BaseModel):
 
 
 class ProductOut(BaseModel):
-    id: int
+    id: str                # MongoDB ObjectId as string
     name: str
     description: Optional[str] = None
     price: float
@@ -101,17 +101,17 @@ class ProductOut(BaseModel):
 # Order Schemas
 # -----------------------
 class OrderCreate(BaseModel):
-    product_id: int
+    product_id: str        # MongoDB ObjectId as string
     quantity: int
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class OrderOut(BaseModel):
-    id: int
-    product_id: int
-    customer_id: int
-    vendor_id: int
+    id: str                # MongoDB ObjectId as string
+    product_id: str
+    customer_id: str
+    vendor_id: str
     quantity: int
     total_price: float
     status: str
