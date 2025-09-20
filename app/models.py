@@ -1,4 +1,4 @@
-# app/schemas.py
+# app/models.py
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from bson import ObjectId
