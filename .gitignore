@@ -1,0 +1,21 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+
+# IDE
+.vscode/
+
+# SQLite DB & test scripts
+*.db
+test_db.py
+
+# Environment variables
+.env
+
+# Alembic migrations (optional)
+alembic/versions/*.pyc
