@@ -5,6 +5,12 @@ from typing import Optional
 # -----------------------
 # User Schemas
 # -----------------------
+from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
+from typing import Optional
+
+# -----------------------
+# User Schemas
+# -----------------------
 class UserCreate(BaseModel):
     username: str
     email: Optional[EmailStr] = None
@@ -39,7 +45,7 @@ class UserLogin(BaseModel):
 
 
 class UserOut(BaseModel):
-    id: str                 # MongoDB ObjectId as string
+    id: str  # MongoDB ObjectId as string
     username: Optional[str] = None
     email: Optional[EmailStr] = None
     whatsapp: Optional[str] = None
@@ -48,12 +54,12 @@ class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# JWT Token response schema
 class Token(BaseModel):
     access_token: str
     token_type: str
 
     model_config = ConfigDict(from_attributes=True)
+
 
 
 # -----------------------
