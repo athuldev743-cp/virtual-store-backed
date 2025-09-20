@@ -6,11 +6,18 @@ load_dotenv()
 
 MONGO_URL = os.getenv("MONGO_URL")
 
-# Create MongoDB client
-client = AsyncIOMotorClient(MONGO_URL)
+# Global client and db variables
+client: AsyncIOMotorClient | None = None
+db = None
 
-# Explicitly select the database
-db = client["real_estate_db"]
+async def connect_db():
+    global client, db
+    client = AsyncIOMotorClient(MONGO_URL)
+    db = client["real_estate_db"]
+    print("MongoDB connected.")
 
-# Example usage:
-# await db["users"].insert_one({"name": "Test"})
+async def close_db():
+    global client
+    if client:
+        client.close()
+        print("MongoDB connection closed.")
