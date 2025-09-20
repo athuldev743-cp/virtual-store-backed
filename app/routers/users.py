@@ -5,7 +5,7 @@ from app import schemas, auth
 from bson import ObjectId
 import hashlib
 
-router = APIRouter(prefix="/users", tags=["Users"])
+router = APIRouter(tags=["Users"])
 
 # -----------------------
 # Signup

@@ -25,7 +25,6 @@ async def global_exception_handler(request: Request, exc: Exception):
 # -------------------------
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(store.router, prefix="/api/store", tags=["Store"])
-
 # -------------------------
 # Root endpoint
 # -------------------------

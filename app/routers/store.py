@@ -16,7 +16,7 @@ import os
 from app.utils.twilio_utils import send_whatsapp
 
 
-router = APIRouter(prefix="/store", tags=["Store"])
+router = APIRouter(tags=["Store"])
 # Folder to save uploaded product images
 UPLOAD_DIR = "uploads/products"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
