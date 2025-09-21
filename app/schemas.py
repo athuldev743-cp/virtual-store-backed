@@ -1,44 +1,30 @@
 # app/schemas.py
 from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from typing import Optional
-
-# -----------------------
-# User Schemas
-# -----------------------
 from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from typing import Optional
+import re 
 
 # -----------------------
 # User Schemas
 # -----------------------
 class UserCreate(BaseModel):
     username: str
-    email: Optional[EmailStr] = None
-    whatsapp: Optional[str] = None
+    email: EmailStr
     password: str
-    password_confirm: str
 
     model_config = ConfigDict(from_attributes=True)
 
     @field_validator("password")
     def password_strength(cls, v):
-        import re
         if not re.match(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$", v):
             raise ValueError(
                 "Password must be 8+ chars, include upper, lower, number, special char"
             )
         return v
 
-    @field_validator("password_confirm")
-    def passwords_match(cls, v, info):
-        if "password" in info.data and v != info.data["password"]:
-            raise ValueError("Passwords do not match")
-        return v
-
-
 class UserLogin(BaseModel):
-    email: Optional[EmailStr] = None
-    whatsapp: Optional[str] = None
+    email: EmailStr
     password: str
 
     model_config = ConfigDict(from_attributes=True)

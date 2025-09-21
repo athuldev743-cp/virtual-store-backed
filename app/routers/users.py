@@ -1,42 +1,31 @@
 from fastapi import APIRouter, HTTPException
-from app.database import db
 from app import schemas, auth
+from app.database import db
 import hashlib
 
 router = APIRouter(tags=["Users"])
 
-# -------------------
-# Signup
-# -------------------
 @router.post("/signup")
 async def signup(user: schemas.UserCreate):
-    if not user.email and not user.whatsapp:
-        raise HTTPException(status_code=400, detail="Email or WhatsApp is required")
-    
     # Check if email exists
-    if user.email:
-        existing = await db["users"].find_one({"email": user.email.lower()})
-        if existing:
-            raise HTTPException(status_code=400, detail="Email already registered")
-    
-    # Check if WhatsApp exists
-    if user.whatsapp:
-        existing = await db["users"].find_one({"whatsapp": user.whatsapp})
-        if existing:
-            raise HTTPException(status_code=400, detail="WhatsApp already registered")
+    existing = await db["users"].find_one({"email": user.email.lower()})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
     
     # Hash password
     hashed_password = hashlib.sha256(user.password.encode()).hexdigest()
-    user_dict = user.dict()
-    user_dict["password"] = hashed_password
-    user_dict["role"] = "customer"  # everyone is customer
+    user_dict = {
+        "username": user.username,
+        "email": user.email.lower(),
+        "password": hashed_password,
+        "role": "customer"  # everyone is customer by default
+    }
 
     # Insert into DB
     result = await db["users"].insert_one(user_dict)
 
     # Create JWT token
-    identifier = user.email or user.whatsapp
-    token = auth.create_access_token({"sub": identifier, "role": "customer"})
+    token = auth.create_access_token({"sub": user.email, "role": "customer"})
 
     return {"access_token": token, "token_type": "bearer"}
 
