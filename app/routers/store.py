@@ -1,16 +1,16 @@
 # app/routers/store.py
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
 from typing import List
-from app.database import db
+from app.database import get_db          # ✅ use get_db instead of db
 from app import schemas, auth
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from bson import ObjectId
 import asyncio
-from fastapi import UploadFile, File
 import shutil
 from pathlib import Path
 import os
+
 
 
 from app.utils.twilio_utils import send_whatsapp
