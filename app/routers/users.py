@@ -1,51 +1,72 @@
+# app/routers/users.py
 from fastapi import APIRouter, HTTPException
 from app import schemas, auth
 from app.database import db
-import hashlib
+from passlib.context import CryptContext
 
 router = APIRouter(tags=["Users"])
 
-@router.post("/signup")
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# -------------------
+# Signup
+# -------------------
+@router.post("/signup", response_model=schemas.Token)
 async def signup(user: schemas.UserCreate):
+    # Strip spaces
+    username = user.username.strip()
+    email = user.email.strip().lower()
+    password = user.password.strip()
+
     # Check if email exists
-    existing = await db["users"].find_one({"email": user.email.lower()})
+    existing = await db["users"].find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-    
+
     # Hash password
-    hashed_password = hashlib.sha256(user.password.encode()).hexdigest()
-    user_dict = {
-        "username": user.username,
-        "email": user.email.lower(),
-        "password": hashed_password,
-        "role": "customer"  # everyone is customer by default
-    }
+    hashed_password = pwd_context.hash(password)
 
     # Insert into DB
+    user_dict = {
+        "username": username,
+        "email": email,
+        "password": hashed_password,
+        "role": "customer"  # default role
+    }
     result = await db["users"].insert_one(user_dict)
 
     # Create JWT token
-    token = auth.create_access_token({"sub": user.email, "role": "customer"})
+    token = auth.create_access_token({"sub": str(result.inserted_id), "role": "customer"})
 
-    return {"access_token": token, "token_type": "bearer"}
+    return {
+        "access_token": token,
+        "token_type": "bearer"
+    }
 
 # -------------------
 # Login
 # -------------------
-@router.post("/login")
+@router.post("/login", response_model=schemas.Token)
 async def login(form_data: schemas.UserLogin):
+    email_or_whatsapp = form_data.email.strip() if form_data.email else None
     user = None
-    if form_data.email:
-        user = await db["users"].find_one({"email": form_data.email.lower()})
-    elif form_data.whatsapp:
-        user = await db["users"].find_one({"whatsapp": form_data.whatsapp})
+
+    if email_or_whatsapp:
+        user = await db["users"].find_one({"email": email_or_whatsapp.lower()})
+    elif getattr(form_data, "whatsapp", None):
+        whatsapp = form_data.whatsapp.strip()
+        user = await db["users"].find_one({"whatsapp": whatsapp})
     else:
         raise HTTPException(status_code=400, detail="Email or WhatsApp is required")
-    
-    if not user or not auth.verify_password(form_data.password, user["password"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    identifier = user.get("email") or user.get("whatsapp")
-    token = auth.create_access_token({"sub": identifier, "role": user.get("role")})
 
-    return {"access_token": token, "token_type": "bearer"}
+    if not user or not pwd_context.verify(form_data.password, user["password"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    # Use MongoDB _id as identifier
+    token = auth.create_access_token({"sub": str(user["_id"]), "role": user.get("role")})
+
+    return {
+        "access_token": token,
+        "token_type": "bearer"
+    }

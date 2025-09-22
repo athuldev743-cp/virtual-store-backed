@@ -125,39 +125,39 @@ async def place_order(order_data: schemas.OrderCreate, user=Depends(auth.require
 # -------------------------
 # Vendor Endpoints
 # -------------------------
+from fastapi import APIRouter, HTTPException, Depends
+from app.database import db
+from app import schemas
+from app.routers.store import get_current_user
+import asyncio
+from app.utils.twilio_utils import send_whatsapp
+
+router = APIRouter(tags=["Store"])
+
+ADMIN_WHATSAPP = "+1234567890"  # Replace with your admin WhatsApp number
+
 @router.post("/apply-vendor", response_model=schemas.VendorOut)
-async def apply_vendor(vendor_data: schemas.VendorCreate, current_user=Depends(get_current_user)):
+async def apply_vendor(vendor_data: schemas.VendorApply, current_user=Depends(get_current_user)):
+    # Check if user already applied
     existing_vendor = await db["vendors"].find_one({"user_id": str(current_user["_id"])})
     if existing_vendor:
         raise HTTPException(status_code=400, detail="Already applied")
-    vendor_doc = {**vendor_data.dict(), "user_id": str(current_user["_id"]), "status": "pending"}
-    result = await db["vendors"].insert_one(vendor_doc)
-    return {**vendor_doc, "id": str(result.inserted_id)}
-@router.post("/products", response_model=schemas.ProductOut)
-async def create_product(
-    name: str,
-    description: str,
-    price: float,
-    stock: int,
-    file: UploadFile = File(...),
-    user=Depends(auth.require_role(["vendor"]))
-):
-    vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
-    if not vendor:
-        raise HTTPException(status_code=403, detail="Vendor not approved")
 
-    file_url = save_uploaded_file(file, str(vendor["_id"]))
-
-    product_doc = {
-        "vendor_id": vendor["_id"],
-        "name": name,
-        "description": description,
-        "price": price,
-        "stock": stock,
-        "image_url": file_url
+    # Insert vendor application
+    vendor_doc = {
+        "user_id": str(current_user["_id"]),
+        "shop_name": vendor_data.name,
+        "whatsapp": vendor_data.whatsapp,
+        "status": "pending"
     }
-    result = await db["products"].insert_one(product_doc)
-    return {**product_doc, "id": str(result.inserted_id)}
+    result = await db["vendors"].insert_one(vendor_doc)
+
+    # Notify admin via WhatsApp
+    message = f"New vendor application from {vendor_data.name} ({vendor_data.whatsapp})"
+    asyncio.create_task(send_whatsapp(ADMIN_WHATSAPP, message))
+
+    return {**vendor_doc, "id": str(result.inserted_id)}
+
     
 @router.put("/products/{product_id}", response_model=schemas.ProductOut)
 async def update_product(
