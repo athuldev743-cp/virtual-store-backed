@@ -86,3 +86,11 @@ def require_role(required_roles: List[str]):
             raise HTTPException(status_code=403, detail="Operation not permitted")
         return user
     return role_checker
+# Helper to decode access token (for tests / scripts)
+# -------------------------------
+def decode_access_token(token: str) -> dict:
+    """
+    Decode a JWT token and return its payload without FastAPI dependencies.
+    Raises JWTError if token is invalid.
+    """
+    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])

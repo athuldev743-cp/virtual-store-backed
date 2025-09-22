@@ -2,9 +2,12 @@
 from fastapi import APIRouter, HTTPException, Depends
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from passlib.context import CryptContext
+import traceback
 
 from app import schemas, auth
+from app.auth import hash_password
 from app.database import get_db
+from app.schemas import UserCreate
 
 router = APIRouter(tags=["Users"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -14,34 +17,37 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # Signup
 # -------------------------
 @router.post("/signup", response_model=schemas.Token)
-async def signup(user: schemas.UserCreate, db: AsyncIOMotorDatabase = Depends(get_db)):
-    email = (user.email or "").strip().lower()
-    whatsapp = (user.whatsapp or "").strip()
-    username = (user.username or "").strip()
-    password = user.password.strip()
+async def signup(user: UserCreate):
+    try:
+        print("Signup route called")
+        db: AsyncIOMotorDatabase = await get_db()
 
-    # Check if email or whatsapp already exists
-    if email:
-        existing_email = await db["users"].find_one({"email": email})
-        if existing_email:
+        # Check if user already exists
+        existing = await db["users"].find_one({"email": user.email})
+        if existing:
+            print("User already exists:", user.email)
             raise HTTPException(status_code=400, detail="Email already registered")
-    if whatsapp:
-        existing_wp = await db["users"].find_one({"whatsapp": whatsapp})
-        if existing_wp:
-            raise HTTPException(status_code=400, detail="WhatsApp already registered")
 
-    hashed_password = pwd_context.hash(password)
-    user_dict = {
-        "username": username,
-        "email": email if email else None,
-        "whatsapp": whatsapp if whatsapp else None,
-        "password": hashed_password,
-        "role": "customer"
-    }
+        # Hash password
+        hashed_pw = hash_password(user.password)
+        user_dict = user.dict()
+        user_dict["password"] = hashed_pw
+        user_dict["role"] = "customer"  # default role
 
-    result = await db["users"].insert_one(user_dict)
-    token = auth.create_access_token({"sub": str(result.inserted_id), "role": "customer"})
-    return {"access_token": token, "token_type": "bearer"}
+        # Insert into DB
+        result = await db["users"].insert_one(user_dict)
+        print("User inserted with ID:", result.inserted_id)
+
+        # Create JWT token
+        token_data = {"sub": str(result.inserted_id), "role": "customer"}
+        access_token = auth.create_access_token(token_data)
+
+        return {"access_token": access_token, "token_type": "bearer"}
+
+    except Exception as e:
+        print("Signup error:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # -------------------------
