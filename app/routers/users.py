@@ -3,12 +3,16 @@ from fastapi import APIRouter, HTTPException
 from app import schemas, auth
 from app.database import db
 from passlib.context import CryptContext
+import re
 
 router = APIRouter(tags=["Users"])
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# -------------------
+# Signup
+# -------------------
 # -------------------
 # Signup
 # -------------------
@@ -23,6 +27,13 @@ async def signup(user: schemas.UserCreate):
     existing = await db["users"].find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    # ✅ Password validation
+    if not re.match(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$", password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters long, include one uppercase letter, one lowercase letter, one number, and one special character."
+        )
 
     # Hash password
     hashed_password = pwd_context.hash(password)
@@ -43,6 +54,7 @@ async def signup(user: schemas.UserCreate):
         "access_token": token,
         "token_type": "bearer"
     }
+
 
 # -------------------
 # Login
