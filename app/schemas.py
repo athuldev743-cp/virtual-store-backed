@@ -2,6 +2,13 @@
 from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from typing import Optional
 import re
+from bson import ObjectId
+
+# -----------------------
+# Helper function
+# -----------------------
+def oid_str(oid: ObjectId) -> str:
+    return str(oid) if oid else None
 
 # -----------------------
 # User Schemas
@@ -32,12 +39,21 @@ class UserLogin(BaseModel):
 
 
 class UserOut(BaseModel):
-    id: str  # MongoDB ObjectId as string
+    id: str
     username: Optional[str] = None
     email: Optional[EmailStr] = None
     role: str
 
     model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    def from_mongo(cls, doc):
+        return cls(
+            id=oid_str(doc.get("_id")),
+            username=doc.get("username"),
+            email=doc.get("email"),
+            role=doc.get("role")
+        )
 
 
 class Token(BaseModel):
@@ -47,25 +63,35 @@ class Token(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-
 # -----------------------
 # Vendor Schemas
 # -----------------------
 class VendorApply(BaseModel):
     shop_name: str
     description: Optional[str] = None
-    whatsapp: Optional[str] = None  # Only required when applying
+    whatsapp: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class VendorOut(BaseModel):
-    id: str                # MongoDB ObjectId as string
+    id: str
     shop_name: str
     description: Optional[str] = None
     whatsapp: Optional[str] = None
-    status: str  # pending, approved, rejected
+    status: str
 
     model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    def from_mongo(cls, doc):
+        return cls(
+            id=oid_str(doc.get("_id")),
+            shop_name=doc.get("shop_name"),
+            description=doc.get("description"),
+            whatsapp=doc.get("whatsapp"),
+            status=doc.get("status"),
+        )
 
 
 # -----------------------
@@ -79,8 +105,9 @@ class ProductCreate(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class ProductOut(BaseModel):
-    id: str                # MongoDB ObjectId as string
+    id: str
     name: str
     description: Optional[str] = None
     price: float
@@ -88,18 +115,29 @@ class ProductOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @classmethod
+    def from_mongo(cls, doc):
+        return cls(
+            id=oid_str(doc.get("_id")),
+            name=doc.get("name"),
+            description=doc.get("description"),
+            price=doc.get("price"),
+            stock=doc.get("stock"),
+        )
+
 
 # -----------------------
 # Order Schemas
 # -----------------------
 class OrderCreate(BaseModel):
-    product_id: str        # MongoDB ObjectId as string
+    product_id: str
     quantity: int
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class OrderOut(BaseModel):
-    id: str                # MongoDB ObjectId as string
+    id: str
     product_id: str
     customer_id: str
     vendor_id: str
@@ -108,3 +146,15 @@ class OrderOut(BaseModel):
     status: str
 
     model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    def from_mongo(cls, doc):
+        return cls(
+            id=oid_str(doc.get("_id")),
+            product_id=oid_str(doc.get("product_id")),
+            customer_id=oid_str(doc.get("customer_id")),
+            vendor_id=oid_str(doc.get("vendor_id")),
+            quantity=doc.get("quantity"),
+            total_price=doc.get("total_price"),
+            status=doc.get("status"),
+        )

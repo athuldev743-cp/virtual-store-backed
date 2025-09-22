@@ -6,9 +6,10 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from bson import ObjectId
-from .database import db
 from dotenv import load_dotenv
+
+# Import get_db instead of db
+from app.database import get_db
 
 # Load .env
 load_dotenv()
@@ -66,8 +67,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     except JWTError:
         raise credentials_exception
 
+    db = get_db()
+    # first try email
     user = await db["users"].find_one({"email": identifier})
     if not user:
+        # fallback to whatsapp
         user = await db["users"].find_one({"whatsapp": identifier})
     if not user:
         raise credentials_exception

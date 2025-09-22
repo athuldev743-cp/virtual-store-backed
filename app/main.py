@@ -1,12 +1,10 @@
-#app/main.py
 import os
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware  # 👈 import this
+from fastapi.middleware.cors import CORSMiddleware
 
-# Use absolute imports for deployment
-from app.database import connect_db, close_db, db
+from app.database import connect_db, close_db
 from app.routers import users, store
 
 app = FastAPI(title="Virtual Store Backend")
@@ -15,8 +13,8 @@ app = FastAPI(title="Virtual Store Backend")
 # CORS
 # -------------------------
 origins = [
-    "https://vstore-kappa.vercel.app",  # 👈 your frontend deployed on Vercel
-    "http://localhost:3000",            # 👈 useful for local dev
+    "https://vstore-kappa.vercel.app",
+    "http://localhost:3000",
 ]
 
 app.add_middleware(
@@ -51,18 +49,15 @@ async def read_root():
     return {"message": "Backend is running!"}
 
 # -------------------------
-# Startup & Shutdown
+# Startup & Shutdown events
 # -------------------------
 @app.on_event("startup")
 async def startup_db():
-    print("Connecting to database...")
     await connect_db()
 
 @app.on_event("shutdown")
 async def shutdown_db():
-    print("Closing database connection...")
     await close_db()
-
 
 # -------------------------
 # Run with uvicorn
