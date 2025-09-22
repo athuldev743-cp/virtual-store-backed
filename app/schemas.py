@@ -15,11 +15,14 @@ class UserCreate(BaseModel):
 
     @field_validator("password")
     def password_strength(cls, v):
-        if not re.match(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$", v):
+        if not re.match(
+            r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$", v
+        ):
             raise ValueError(
-                "Password must be 8+ chars, include upper, lower, number, special char"
+                "Password must be at least 8 chars, include upper, lower, number, and special char"
             )
         return v
+
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -27,20 +30,22 @@ class UserLogin(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class UserOut(BaseModel):
     id: str  # MongoDB ObjectId as string
     username: Optional[str] = None
     email: Optional[EmailStr] = None
-    whatsapp: Optional[str] = None
     role: str
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class Token(BaseModel):
     access_token: str
     token_type: str
 
     model_config = ConfigDict(from_attributes=True)
+
 
 
 # -----------------------
