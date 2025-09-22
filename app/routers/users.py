@@ -66,8 +66,14 @@ async def login(form_data: schemas.UserLogin, db: AsyncIOMotorDatabase = Depends
     if not user or not pwd_context.verify(form_data.password, user.get("password", "")):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    token = auth.create_access_token({"sub": str(user["_id"]), "role": user.get("role")})
+    # Issue a never-expiring token
+    token = auth.create_access_token(
+        {"sub": str(user["_id"]), "role": user.get("role")},
+        never_expire=True
+    )
+    
     return {"access_token": token, "token_type": "bearer"}
+
 
 
 # -------------------------

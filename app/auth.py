@@ -36,11 +36,23 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 # -------------------------------
 # JWT Tokens
 # -------------------------------
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+# -------------------------------
+# JWT Tokens
+# -------------------------------
+def create_access_token(data: dict, never_expire: bool = True) -> str:
+    """
+    Creates an access token.
+    If never_expire=True, token will not have an expiration and stays valid until logout.
+    """
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
+    
+    if not never_expire:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        to_encode.update({"exp": expire})
+    
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
 
 def create_refresh_token(data: dict) -> str:
     expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
