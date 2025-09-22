@@ -3,6 +3,7 @@ from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from typing import Optional
 import re
 from bson import ObjectId
+from typing import Optional
 
 # -----------------------
 # Helper function
@@ -16,6 +17,7 @@ def oid_str(oid: ObjectId) -> str:
 class UserCreate(BaseModel):
     username: str
     email: EmailStr
+    whatsapp: Optional[str] = None
     password: str
 
     model_config = ConfigDict(from_attributes=True)
