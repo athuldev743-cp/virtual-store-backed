@@ -63,6 +63,7 @@ async def shutdown_db():
     print("Closing database connection...")
     await close_db()
 
+
 # -------------------------
 # Run with uvicorn
 # -------------------------
