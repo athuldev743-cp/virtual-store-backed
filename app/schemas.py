@@ -1,9 +1,7 @@
 # app/schemas.py
 from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from typing import Optional
-from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
-from typing import Optional
-import re 
+import re
 
 # -----------------------
 # User Schemas
@@ -29,7 +27,6 @@ class UserLogin(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-
 class UserOut(BaseModel):
     id: str  # MongoDB ObjectId as string
     username: Optional[str] = None
@@ -39,7 +36,6 @@ class UserOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -47,21 +43,21 @@ class Token(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-
 # -----------------------
 # Vendor Schemas
 # -----------------------
-class VendorCreate(BaseModel):
+class VendorApply(BaseModel):
     shop_name: str
     description: Optional[str] = None
+    whatsapp: Optional[str] = None  # Only required when applying
 
     model_config = ConfigDict(from_attributes=True)
-
 
 class VendorOut(BaseModel):
     id: str                # MongoDB ObjectId as string
     shop_name: str
     description: Optional[str] = None
+    whatsapp: Optional[str] = None
     status: str  # pending, approved, rejected
 
     model_config = ConfigDict(from_attributes=True)
@@ -77,7 +73,6 @@ class ProductCreate(BaseModel):
     stock: int
 
     model_config = ConfigDict(from_attributes=True)
-
 
 class ProductOut(BaseModel):
     id: str                # MongoDB ObjectId as string
@@ -97,7 +92,6 @@ class OrderCreate(BaseModel):
     quantity: int
 
     model_config = ConfigDict(from_attributes=True)
-
 
 class OrderOut(BaseModel):
     id: str                # MongoDB ObjectId as string
