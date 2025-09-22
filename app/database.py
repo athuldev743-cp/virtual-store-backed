@@ -1,37 +1,29 @@
 # app/database.py
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from motor.motor_asyncio import AsyncIOMotorClient
 import os
 from dotenv import load_dotenv
-import certifi
 
 load_dotenv()
 
 MONGO_URL = os.getenv("MONGO_URL")
 if not MONGO_URL:
-    raise RuntimeError("MONGO_URL environment variable is missing")
+    raise RuntimeError("MONGO_URL is missing in environment")
 
 client: AsyncIOMotorClient | None = None
-db: AsyncIOMotorDatabase | None = None
 
 async def connect_db():
-    global client, db
+    global client
+    client = AsyncIOMotorClient(MONGO_URL)
     try:
-        client = AsyncIOMotorClient(
-            MONGO_URL,
-            tls=True,                   # enable TLS/SSL
-            tlsCAFile=certifi.where()   # ensure proper certificates
-        )
-        # Test connection
         await client.admin.command("ping")
-        db = client.get_default_database()  # auto from URI
         print("MongoDB connected ✅")
     except Exception as e:
         raise RuntimeError(f"MongoDB connection failed: {e}")
 
-def get_db() -> AsyncIOMotorDatabase:
-    if not db:
+def get_db():
+    if not client:
         raise RuntimeError("Database not connected")
-    return db
+    return client["virtual_store"]
 
 async def close_db():
     global client
