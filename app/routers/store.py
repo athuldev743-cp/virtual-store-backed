@@ -1,15 +1,17 @@
 # app/routers/store.py
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
 from typing import List, Optional
-from app.database import get_db
-from app import schemas, auth
+from pathlib import Path
+import shutil
+import os
+import asyncio
+
+from bson import ObjectId
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
-from bson import ObjectId
-import asyncio
-import shutil
-from pathlib import Path
-import os
+
+from app.database import get_db
+from app import schemas, auth
 from app.utils.twilio_utils import send_whatsapp
 
 router = APIRouter(tags=["Store"])
@@ -19,12 +21,11 @@ router = APIRouter(tags=["Store"])
 # -------------------------
 UPLOAD_DIR = Path("uploads/products")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-ADMIN_WHATSAPP = "+14155238886"  # Replace with your admin WhatsApp number
+TWILIO_WHATSAPP_ADMIN = os.getenv("TWILIO_WHATSAPP_NUMBER")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/login")
 SECRET_KEY = auth.SECRET_KEY
 ALGORITHM = auth.ALGORITHM
-TWILIO_WHATSAPP_ADMIN = os.getenv("TWILIO_WHATSAPP_NUMBER")
 
 # -------------------------
 # Helpers
@@ -39,7 +40,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db=Depends(get_d
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         identifier: str = payload.get("sub")
-        if identifier is None:
+        if not identifier:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
@@ -121,15 +122,11 @@ async def place_order(
 # Vendor Endpoints
 # -------------------------
 @router.post("/apply-vendor", response_model=schemas.VendorOut)
-async def apply_vendor(vendor_data: schemas.VendorApply, current_user=Depends(get_current_user)):
-    db = get_db()
-
-    # Check if user already applied
+async def apply_vendor(vendor_data: schemas.VendorApply, current_user=Depends(get_current_user), db=Depends(get_db)):
     existing_vendor = await db["vendors"].find_one({"user_id": str(current_user["_id"])})
     if existing_vendor:
         raise HTTPException(status_code=400, detail="Already applied")
 
-    # Insert vendor application
     vendor_doc = {
         "user_id": str(current_user["_id"]),
         "shop_name": vendor_data.shop_name,
@@ -139,7 +136,7 @@ async def apply_vendor(vendor_data: schemas.VendorApply, current_user=Depends(ge
     }
     result = await db["vendors"].insert_one(vendor_doc)
 
-    # Notify admin via WhatsApp asynchronously
+    # Notify admin via Twilio WhatsApp
     message = f"New vendor application!\nShop Name: {vendor_data.shop_name}\nWhatsApp: {vendor_data.whatsapp}"
     asyncio.create_task(send_whatsapp(TWILIO_WHATSAPP_ADMIN, message))
 

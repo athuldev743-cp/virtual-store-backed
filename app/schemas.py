@@ -3,12 +3,11 @@ from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from typing import Optional
 import re
 from bson import ObjectId
-from typing import Optional
 
 # -----------------------
 # Helper function
 # -----------------------
-def oid_str(oid: ObjectId) -> str:
+def oid_str(oid: ObjectId) -> Optional[str]:
     return str(oid) if oid else None
 
 # -----------------------
@@ -64,7 +63,6 @@ class Token(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-
 # -----------------------
 # Vendor Schemas
 # -----------------------
@@ -94,7 +92,6 @@ class VendorOut(BaseModel):
             whatsapp=doc.get("whatsapp"),
             status=doc.get("status"),
         )
-
 
 # -----------------------
 # Product Schemas
@@ -126,7 +123,6 @@ class ProductOut(BaseModel):
             price=doc.get("price"),
             stock=doc.get("stock"),
         )
-
 
 # -----------------------
 # Order Schemas

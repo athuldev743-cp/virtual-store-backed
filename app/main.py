@@ -1,6 +1,5 @@
 # app/main.py
 import os
-import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,11 +9,11 @@ from app.routers import users, store
 app = FastAPI(title="Virtual Store Backend")
 
 # -------------------------
-# CORS
+# CORS configuration
 # -------------------------
 origins = [
-    "https://vstore-kappa.vercel.app",  # your frontend URL
-    "http://localhost:3000",
+    "https://vstore-kappa.vercel.app",  # production frontend
+    "http://localhost:3000",             # local frontend
 ]
 
 app.add_middleware(
@@ -26,7 +25,7 @@ app.add_middleware(
 )
 
 # -------------------------
-# Routers
+# Include Routers
 # -------------------------
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(store.router, prefix="/api/store", tags=["Store"])
@@ -36,14 +35,14 @@ async def root():
     return {"message": "Backend is running!"}
 
 # -------------------------
-# Startup & Shutdown
+# Startup & Shutdown events
 # -------------------------
 @app.on_event("startup")
-async def startup():
+async def startup_event():
     await connect_db()
 
 @app.on_event("shutdown")
-async def shutdown():
+async def shutdown_event():
     await close_db()
 
 # -------------------------
@@ -51,5 +50,9 @@ async def shutdown():
 # -------------------------
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), reload=True)
-
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8000)),
+        reload=True
+    )
