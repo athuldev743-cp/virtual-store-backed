@@ -87,37 +87,35 @@ async def place_order(
 # -------------------------
 # Vendor Endpoints
 # -------------------------
-@router.post("/apply-vendor", response_model=schemas.VendorOut)
-async def apply_vendor(
-    vendor_data: schemas.VendorApply,
-    current_user=Depends(auth.get_current_user),
+@router.post("/products", response_model=schemas.ProductOut)
+async def create_product(
+    name: str,
+    description: Optional[str] = None,
+    price: float = 0.0,  # per kg
+    stock: float = 0.0,  # kg
+    file: Optional[UploadFile] = File(None),
+    user=Depends(auth.require_role(["vendor"])),
     db=Depends(get_db)
 ):
-    existing_vendor = await db["vendors"].find_one({"user_id": str(current_user["_id"])})
-    if existing_vendor:
-        raise HTTPException(status_code=400, detail="Already applied")
-
-    vendor_doc = {
-        "user_id": str(current_user["_id"]),
-        "shop_name": vendor_data.shop_name,
-        "whatsapp": vendor_data.whatsapp,
-        "description": vendor_data.description,
-        "status": "pending"
-    }
-    result = await db["vendors"].insert_one(vendor_doc)
-
-    # Notify admin via Twilio WhatsApp
-    message = f"New vendor application!\nShop Name: {vendor_data.shop_name}\nWhatsApp: {vendor_data.whatsapp}"
-    asyncio.create_task(send_whatsapp(TWILIO_WHATSAPP_ADMIN, message))
-
-    return {**vendor_doc, "id": str(result.inserted_id)}
-
-@router.get("/vendors/status/{user_id}")
-async def vendor_status(user_id: str, db=Depends(get_db)):
-    vendor = await db["vendors"].find_one({"user_id": user_id})
+    vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
     if not vendor:
-        return {"status": "none"}  # Not applied yet
-    return {"status": vendor.get("status", "pending")}
+        raise HTTPException(status_code=403, detail="Vendor not approved")
+
+    product_doc = {
+        "vendor_id": vendor["_id"],
+        "name": name,
+        "description": description,
+        "price": price,
+        "stock": stock,
+    }
+
+    if file:
+        product_doc["image_url"] = save_uploaded_file(file, str(vendor["_id"]))
+
+    result = await db["products"].insert_one(product_doc)
+    product_doc["id"] = str(result.inserted_id)
+    return product_doc
+
 
 
 
