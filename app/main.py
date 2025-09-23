@@ -1,7 +1,8 @@
-# app/main.py
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from app.database import connect_db, close_db
 from app.routers import users, store
@@ -12,8 +13,8 @@ app = FastAPI(title="Virtual Store Backend")
 # CORS configuration
 # -------------------------
 origins = [
-    "https://vstore-kappa.vercel.app",  # production frontend
-    "http://localhost:3000",             # local frontend
+    "https://vstore-kappa.vercel.app",
+    "http://localhost:3000",
 ]
 
 app.add_middleware(
@@ -30,9 +31,16 @@ app.add_middleware(
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(store.router, prefix="/api/store", tags=["Store"])
 
-@app.get("/")
-async def root():
-    return {"message": "Backend is running!"}
+# -------------------------
+# Serve React build
+# -------------------------
+# Make sure you have `frontend/build` folder here
+app.mount("/static", StaticFiles(directory="frontend/build/static"), name="static")
+
+@app.get("/{full_path:path}")
+async def serve_react(full_path: str):
+    index_path = os.path.join("frontend", "build", "index.html")
+    return FileResponse(index_path)
 
 # -------------------------
 # Startup & Shutdown events
