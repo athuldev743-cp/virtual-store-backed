@@ -97,6 +97,7 @@ async def create_product(
     user=Depends(auth.require_role(["vendor"])),
     db=Depends(get_db)
 ):
+    # check vendor approved
     vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
     if not vendor:
         raise HTTPException(status_code=403, detail="Vendor not approved")
@@ -109,12 +110,18 @@ async def create_product(
         "stock": stock,
     }
 
+    # handle image upload
     if file:
-        product_doc["image_url"] = save_uploaded_file(file, str(vendor["_id"]))
+        filename = f"{vendor['_id']}_{Path(file.filename).name}"
+        file_path = UPLOAD_DIR / filename
+        with open(file_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        product_doc["image_url"] = str(file_path)
 
     result = await db["products"].insert_one(product_doc)
     product_doc["id"] = str(result.inserted_id)
     return product_doc
+
 
 
 
