@@ -5,10 +5,7 @@ from pathlib import Path
 import shutil
 import os
 import asyncio
-
 from bson import ObjectId
-from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
 
 from app.database import get_db
 from app import schemas, auth
@@ -23,40 +20,6 @@ UPLOAD_DIR = Path("uploads/products")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 TWILIO_WHATSAPP_ADMIN = os.getenv("TWILIO_WHATSAPP_NUMBER")
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/login")
-SECRET_KEY = auth.SECRET_KEY
-ALGORITHM = auth.ALGORITHM
-
-# -------------------------
-# Helpers
-# -------------------------
-async def get_current_user(token: str = Depends(oauth2_scheme), db=Depends(get_db)):
-    """Decode JWT and return current user"""
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        identifier: str = payload.get("sub")
-        if not identifier:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-
-    user = await db["users"].find_one({"$or": [{"email": identifier}, {"whatsapp": identifier}]})
-    if not user:
-        raise credentials_exception
-    return user
-
-def require_role(roles: List[str]):
-    """Dependency to require user roles"""
-    async def checker(user=Depends(get_current_user)):
-        if user.get("role") not in roles:
-            raise HTTPException(status_code=403, detail="Operation not permitted")
-        return user
-    return checker
 
 def save_uploaded_file(file: UploadFile, vendor_id: str) -> str:
     """Save uploaded file and return relative path"""
@@ -65,6 +28,7 @@ def save_uploaded_file(file: UploadFile, vendor_id: str) -> str:
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
     return str(file_path)
+
 
 # -------------------------
 # Customer Endpoints
@@ -78,10 +42,11 @@ async def list_products(db=Depends(get_db)):
         products.append(p)
     return products
 
+
 @router.post("/orders", response_model=schemas.OrderOut)
 async def place_order(
     order_data: schemas.OrderCreate,
-    user=Depends(require_role(["customer"])),
+    user=Depends(auth.require_role(["customer"])),
     db=Depends(get_db)
 ):
     product = await db["products"].find_one({"_id": ObjectId(order_data.product_id)})
@@ -118,11 +83,16 @@ async def place_order(
 
     return {**order_doc, "id": str(result.inserted_id)}
 
+
 # -------------------------
 # Vendor Endpoints
 # -------------------------
 @router.post("/apply-vendor", response_model=schemas.VendorOut)
-async def apply_vendor(vendor_data: schemas.VendorApply, current_user=Depends(get_current_user), db=Depends(get_db)):
+async def apply_vendor(
+    vendor_data: schemas.VendorApply,
+    current_user=Depends(auth.get_current_user),
+    db=Depends(get_db)
+):
     existing_vendor = await db["vendors"].find_one({"user_id": str(current_user["_id"])})
     if existing_vendor:
         raise HTTPException(status_code=400, detail="Already applied")
@@ -142,6 +112,7 @@ async def apply_vendor(vendor_data: schemas.VendorApply, current_user=Depends(ge
 
     return {**vendor_doc, "id": str(result.inserted_id)}
 
+
 @router.put("/products/{product_id}", response_model=schemas.ProductOut)
 async def update_product(
     product_id: str,
@@ -150,7 +121,7 @@ async def update_product(
     price: float,
     stock: int,
     file: Optional[UploadFile] = File(None),
-    user=Depends(require_role(["vendor"])),
+    user=Depends(auth.require_role(["vendor"])),
     db=Depends(get_db)
 ):
     vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
@@ -170,22 +141,30 @@ async def update_product(
     updated_product["id"] = str(updated_product["_id"])
     return updated_product
 
+
 @router.delete("/products/{product_id}")
-async def delete_product(product_id: str, user=Depends(require_role(["vendor"])), db=Depends(get_db)):
+async def delete_product(
+    product_id: str,
+    user=Depends(auth.require_role(["vendor"])),
+    db=Depends(get_db)
+):
     vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
     if not vendor:
         raise HTTPException(status_code=403, detail="Vendor not approved")
+
     db_product = await db["products"].find_one({"_id": ObjectId(product_id), "vendor_id": vendor["_id"]})
     if not db_product:
         raise HTTPException(status_code=404, detail="Product not found")
+
     await db["products"].delete_one({"_id": db_product["_id"]})
     return {"detail": "Product deleted successfully"}
+
 
 # -------------------------
 # Admin Endpoints
 # -------------------------
 @router.get("/vendors/pending", response_model=List[schemas.VendorOut])
-async def list_pending_vendors(user=Depends(require_role(["admin"])), db=Depends(get_db)):
+async def list_pending_vendors(user=Depends(auth.require_role(["admin"])), db=Depends(get_db)):
     vendors_cursor = db["vendors"].find({"status": "pending"})
     vendors = []
     async for v in vendors_cursor:
@@ -193,8 +172,9 @@ async def list_pending_vendors(user=Depends(require_role(["admin"])), db=Depends
         vendors.append(v)
     return vendors
 
+
 @router.post("/vendors/{vendor_id}/approve")
-async def approve_vendor(vendor_id: str, user=Depends(require_role(["admin"])), db=Depends(get_db)):
+async def approve_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"])), db=Depends(get_db)):
     vendor = await db["vendors"].find_one({"_id": ObjectId(vendor_id)})
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
@@ -205,10 +185,12 @@ async def approve_vendor(vendor_id: str, user=Depends(require_role(["admin"])), 
     user_doc = await db["users"].find_one({"_id": ObjectId(vendor["user_id"])})
     if user_doc and user_doc.get("whatsapp"):
         asyncio.create_task(send_whatsapp(user_doc.get("whatsapp"), "Congratulations! Your vendor application has been approved."))
+
     return {"detail": f"Vendor {vendor_id} approved"}
 
+
 @router.post("/vendors/{vendor_id}/reject")
-async def reject_vendor(vendor_id: str, user=Depends(require_role(["admin"])), db=Depends(get_db)):
+async def reject_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"])), db=Depends(get_db)):
     vendor = await db["vendors"].find_one({"_id": ObjectId(vendor_id)})
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
@@ -217,13 +199,15 @@ async def reject_vendor(vendor_id: str, user=Depends(require_role(["admin"])), d
     user_doc = await db["users"].find_one({"_id": ObjectId(vendor["user_id"])})
     if user_doc and user_doc.get("whatsapp"):
         asyncio.create_task(send_whatsapp(user_doc.get("whatsapp"), "Your vendor application has been rejected. You can reapply later."))
+
     return {"detail": f"Vendor {vendor_id} rejected"}
+
 
 # -------------------------
 # Orders History
 # -------------------------
 @router.get("/orders")
-async def get_orders(user=Depends(get_current_user), db=Depends(get_db)):
+async def get_orders(user=Depends(auth.get_current_user), db=Depends(get_db)):
     if user.get("role") == "customer":
         orders_cursor = db["orders"].find({"customer_id": str(user["_id"])})
     elif user.get("role") == "vendor":

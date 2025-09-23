@@ -33,7 +33,7 @@ class UserCreate(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
     password: str
 
     model_config = ConfigDict(from_attributes=True)
@@ -43,6 +43,7 @@ class UserOut(BaseModel):
     id: str
     username: Optional[str] = None
     email: Optional[EmailStr] = None
+    whatsapp: Optional[str] = None
     role: str
 
     model_config = ConfigDict(from_attributes=True)
@@ -53,6 +54,7 @@ class UserOut(BaseModel):
             id=oid_str(doc.get("_id")),
             username=doc.get("username"),
             email=doc.get("email"),
+            whatsapp=doc.get("whatsapp"),
             role=doc.get("role")
         )
 

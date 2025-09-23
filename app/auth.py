@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
 from app.database import get_db
+from bson import ObjectId
 
 load_dotenv()
 
@@ -68,9 +69,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         raise credentials_exception
 
     db = get_db()
-    user = await db["users"].find_one({"email": identifier})
-    if not user:
-        user = await db["users"].find_one({"whatsapp": identifier})
+    # ------------------- FIX HERE -------------------
+    user = await db["users"].find_one({"_id": ObjectId(identifier)})
+    # -------------------------------------------------
     if not user:
         raise credentials_exception
     return user
