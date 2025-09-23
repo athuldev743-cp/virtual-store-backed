@@ -6,6 +6,7 @@ import shutil
 import os
 import asyncio
 from bson import ObjectId
+from fastapi import Form
 
 from app.database import get_db
 from app import schemas, auth
@@ -89,10 +90,10 @@ async def place_order(
 # -------------------------
 @router.post("/products", response_model=schemas.ProductOut)
 async def create_product(
-    name: str,
-    description: Optional[str] = None,
-    price: float = 0.0,  # per kg
-    stock: float = 0.0,  # kg
+    name: str = Form(...),
+    description: Optional[str] = Form(None),
+    price: float = Form(0.0),
+    stock: float = Form(0.0),
     file: Optional[UploadFile] = File(None),
     user=Depends(auth.require_role(["vendor"])),
     db=Depends(get_db)
