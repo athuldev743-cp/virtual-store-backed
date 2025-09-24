@@ -19,37 +19,41 @@ async def signup(user: schemas.UserCreate, db: AsyncIOMotorDatabase = Depends(ge
     """
     Create a new user and return an access token.
     """
-    try:
-        # Check if email already exists
-        existing = await db["users"].find_one({"email": user.email.lower()})
-        if existing:
-            raise HTTPException(status_code=400, detail="Email already registered")
+    # Normalize email
+    email = (user.email or "").strip().lower()
 
+    # Check if email already exists
+    existing = await db["users"].find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    try:
         # Hash password
         hashed_pw = hash_password(user.password)
         user_dict = user.model_dump()
         user_dict["password"] = hashed_pw
+        user_dict["email"] = email
         user_dict["role"] = "customer"
 
         # Insert user into DB
         result = await db["users"].insert_one(user_dict)
 
-        # Create JWT token including email
+        # Create JWT token
         token_data = {
             "sub": str(result.inserted_id),
             "role": "customer",
-            "email": user.email.lower()
+            "email": email
         }
         access_token = auth.create_access_token(token_data)
 
         return {"access_token": access_token, "token_type": "bearer"}
 
     except Exception as e:
+        # Only catch unexpected errors
+        import traceback
         traceback.print_exc()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 # -------------------------
 # Login
