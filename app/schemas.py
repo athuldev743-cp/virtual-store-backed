@@ -33,10 +33,11 @@ class UserCreate(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: Optional[EmailStr] = None
+    email: EmailStr        # required now
     password: str
 
     model_config = ConfigDict(from_attributes=True)
+
 
 
 class UserOut(BaseModel):
