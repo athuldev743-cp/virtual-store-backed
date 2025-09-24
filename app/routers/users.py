@@ -21,6 +21,10 @@ async def signup(user: schemas.UserCreate, db: AsyncIOMotorDatabase = Depends(ge
     Create a new user and return an access token.
     """
     try:
+        # Validate input
+        if not user.email or not user.password:
+            raise HTTPException(status_code=400, detail="Email and password required")
+
         # Check if user already exists
         existing = await db["users"].find_one({"email": user.email.lower()})
         if existing:
@@ -28,9 +32,11 @@ async def signup(user: schemas.UserCreate, db: AsyncIOMotorDatabase = Depends(ge
 
         # Hash password
         hashed_pw = hash_password(user.password)
-        user_dict = user.model_dump()
+
+        # Convert Pydantic model to dict safely
+        user_dict = user.model_dump() if hasattr(user, "model_dump") else user.dict()
         user_dict["password"] = hashed_pw
-        user_dict["role"] = "customer"
+        user_dict["role"] = "customer"  # default role
 
         # Insert user into DB
         result = await db["users"].insert_one(user_dict)
@@ -41,7 +47,7 @@ async def signup(user: schemas.UserCreate, db: AsyncIOMotorDatabase = Depends(ge
 
         return {"access_token": access_token, "token_type": "bearer"}
 
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -54,23 +60,28 @@ async def login(form_data: schemas.UserLogin, db: AsyncIOMotorDatabase = Depends
     """
     Authenticate user via email or WhatsApp and return access token.
     """
-    identifier = (form_data.email or form_data.whatsapp or "").strip().lower()
-    user = None
+    try:
+        identifier = (form_data.email or form_data.whatsapp or "").strip().lower()
+        user = None
 
-    if form_data.email:
-        user = await db["users"].find_one({"email": identifier})
-    if not user and form_data.whatsapp:
-        user = await db["users"].find_one({"whatsapp": identifier})
+        if form_data.email:
+            user = await db["users"].find_one({"email": identifier})
+        if not user and form_data.whatsapp:
+            user = await db["users"].find_one({"whatsapp": identifier})
 
-    if not user or not pwd_context.verify(form_data.password, user.get("password", "")):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        if not user or not pwd_context.verify(form_data.password, user.get("password", "")):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    token = auth.create_access_token(
-        {"sub": str(user["_id"]), "role": user.get("role")},
-        never_expire=True
-    )
+        token = auth.create_access_token(
+            {"sub": str(user["_id"]), "role": user.get("role")},
+            never_expire=True
+        )
 
-    return {"access_token": token, "token_type": "bearer"}
+        return {"access_token": token, "token_type": "bearer"}
+
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # -------------------------
@@ -78,11 +89,14 @@ async def login(form_data: schemas.UserLogin, db: AsyncIOMotorDatabase = Depends
 # -------------------------
 @router.get("/me", response_model=schemas.UserOut)
 async def get_me(user=Depends(auth.get_current_user)):
+    """
+    Get the currently logged-in user.
+    """
     return {
         "id": str(user["_id"]),
         "username": user.get("username"),
         "email": user.get("email"),
         "whatsapp": user.get("whatsapp"),
-        "address": user.get("address"),  # 👈 add
+        "address": user.get("address"),
         "role": user.get("role")
     }
