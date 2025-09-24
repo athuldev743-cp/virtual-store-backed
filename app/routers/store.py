@@ -304,3 +304,9 @@ async def place_order(
         "status": order_doc["status"],
         "remaining_stock": new_stock
     }
+@router.get("/vendors/status/{user_id}")
+async def get_vendor_status(user_id: str, db=Depends(get_db)):
+    vendor = await db["vendors"].find_one({"user_id": user_id})
+    if not vendor:
+        return {"status": "none"}  # or "not_applied"
+    return {"status": vendor["status"]}
