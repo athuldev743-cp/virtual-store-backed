@@ -11,7 +11,7 @@ app = FastAPI(title="Virtual Store Backend")
 # -------------------------
 # CORS configuration
 # -------------------------
-# Allow your frontend domain and localhost for development
+# Allow your frontend domain(s)
 origins = [
     "https://vstore-kappa.vercel.app",  # production frontend
     "http://localhost:3000",             # local frontend
@@ -19,10 +19,10 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=origins,       # must match frontend exactly
+    allow_credentials=True,      # allow cookies or Authorization headers
+    allow_methods=["*"],         # allow all HTTP methods
+    allow_headers=["*"],         # allow all headers including Authorization
 )
 
 # -------------------------

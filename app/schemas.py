@@ -144,6 +144,7 @@ class OrderOut(BaseModel):
     quantity: int
     total_price: float
     status: str
+    remaining_stock: Optional[int] = None   # 👈 added field
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -157,4 +158,5 @@ class OrderOut(BaseModel):
             quantity=doc.get("quantity"),
             total_price=doc.get("total_price"),
             status=doc.get("status"),
+            remaining_stock=doc.get("remaining_stock"),  # 👈 added here
         )

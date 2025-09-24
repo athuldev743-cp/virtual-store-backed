@@ -44,45 +44,7 @@ async def list_products(db=Depends(get_db)):
     return products
 
 
-@router.post("/orders", response_model=schemas.OrderOut)
-async def place_order(
-    order_data: schemas.OrderCreate,
-    user=Depends(auth.require_role(["customer"])),
-    db=Depends(get_db)
-):
-    product = await db["products"].find_one({"_id": ObjectId(order_data.product_id)})
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-    if product["stock"] < order_data.quantity:
-        raise HTTPException(status_code=400, detail="Insufficient stock")
 
-    total_price = product["price"] * order_data.quantity
-    order_doc = {
-        "customer_id": str(user["_id"]),
-        "vendor_id": str(product["vendor_id"]),
-        "product_id": str(product["_id"]),
-        "quantity": order_data.quantity,
-        "total_price": total_price,
-        "status": "pending"
-    }
-
-    result = await db["orders"].insert_one(order_doc)
-    await db["products"].update_one(
-        {"_id": product["_id"]},
-        {"$inc": {"stock": -order_data.quantity}}
-    )
-
-    vendor = await db["vendors"].find_one({"_id": ObjectId(product["vendor_id"])})
-    if vendor and vendor.get("whatsapp"):
-        remaining_stock = product["stock"] - order_data.quantity
-        message = (
-            f"New order from {user.get('email') or user.get('whatsapp')}: "
-            f"{order_data.quantity} x {product['name']}. Total: {total_price}. "
-            f"Remaining stock: {remaining_stock}"
-        )
-        asyncio.create_task(send_whatsapp(vendor.get("whatsapp"), message))
-
-    return {**order_doc, "id": str(result.inserted_id)}
 
 
 # -------------------------
@@ -122,6 +84,51 @@ async def create_product(
     result = await db["products"].insert_one(product_doc)
     product_doc["id"] = str(result.inserted_id)
     return product_doc
+
+@router.post("/orders", response_model=schemas.OrderOut)
+async def place_order(
+    order_data: schemas.OrderCreate,
+    user=Depends(auth.require_role(["customer"])),
+    db=Depends(get_db)
+):
+    product = await db["products"].find_one({"_id": ObjectId(order_data.product_id)})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if product["stock"] < order_data.quantity:
+        raise HTTPException(status_code=400, detail="Insufficient stock")
+
+    total_price = product["price"] * order_data.quantity
+    new_stock = product["stock"] - order_data.quantity
+
+    order_doc = {
+        "customer_id": str(user["_id"]),
+        "vendor_id": str(product["vendor_id"]),
+        "product_id": str(product["_id"]),
+        "quantity": order_data.quantity,
+        "total_price": total_price,
+        "status": "pending"
+    }
+
+    result = await db["orders"].insert_one(order_doc)
+
+    # update stock in DB
+    await db["products"].update_one(
+        {"_id": product["_id"]},
+        {"$set": {"stock": new_stock}}
+    )
+
+    # notify vendor
+    vendor = await db["vendors"].find_one({"_id": ObjectId(product["vendor_id"])})
+    if vendor and vendor.get("whatsapp"):
+        message = (
+            f"New order from {user.get('email') or user.get('whatsapp')}: "
+            f"{order_data.quantity} x {product['name']}. Total: {total_price}. "
+            f"Remaining stock: {new_stock}"
+        )
+        asyncio.create_task(send_whatsapp(vendor.get("whatsapp"), message))
+
+    return {**order_doc, "id": str(result.inserted_id), "remaining_stock": new_stock}
+
 
 
 @router.get("/vendors/status/{user_id}")
