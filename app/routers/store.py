@@ -78,6 +78,7 @@ async def create_product(
         "description": description,
         "price": price,
         "stock": stock,
+        "image_url": None,  # initialize to avoid warnings
     }
 
     # handle image upload
@@ -86,11 +87,14 @@ async def create_product(
         file_path = UPLOAD_DIR / filename
         with open(file_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
-        product_doc["image_url"] = str(file_path)
+        # Save URL for frontend
+        product_doc["image_url"] = f"/uploads/products/{filename}"
 
     result = await db["products"].insert_one(product_doc)
     product_doc["id"] = str(result.inserted_id)
     return product_doc
+
+
 
 @router.post("/orders", response_model=schemas.OrderOut)
 async def place_order(

@@ -113,6 +113,7 @@ class ProductOut(BaseModel):
     description: Optional[str] = None
     price: float
     stock: int
+    image_url: Optional[str] = None  # <-- add this
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -124,7 +125,9 @@ class ProductOut(BaseModel):
             description=doc.get("description"),
             price=doc.get("price"),
             stock=doc.get("stock"),
+            image_url=doc.get("image_url")  # <-- add this
         )
+
 
 # -----------------------
 # Order Schemas
