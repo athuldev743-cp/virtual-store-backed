@@ -132,9 +132,14 @@ class ProductOut(BaseModel):
 # -----------------------
 # Order Schemas
 # -----------------------
+# -----------------------
+# Order Schemas
+# -----------------------
 class OrderCreate(BaseModel):
     product_id: str
     quantity: int
+    mobile: Optional[str] = None   # 👈 new
+    address: Optional[str] = None  # 👈 new
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -146,8 +151,10 @@ class OrderOut(BaseModel):
     vendor_id: str
     quantity: int
     total_price: float
-    status: str
-    remaining_stock: Optional[int] = None   # 👈 added field
+    status: Optional[str] = "pending"
+    remaining_stock: Optional[int] = None
+    mobile: Optional[str] = None   # 👈 new
+    address: Optional[str] = None  # 👈 new
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -160,6 +167,8 @@ class OrderOut(BaseModel):
             vendor_id=oid_str(doc.get("vendor_id")),
             quantity=doc.get("quantity"),
             total_price=doc.get("total_price"),
-            status=doc.get("status"),
-            remaining_stock=doc.get("remaining_stock"),  # 👈 added here
+            status=doc.get("status", "pending"),
+            remaining_stock=doc.get("remaining_stock"),
+            mobile=doc.get("mobile"),
+            address=doc.get("address"),
         )

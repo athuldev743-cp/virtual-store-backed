@@ -78,13 +78,11 @@ async def login(form_data: schemas.UserLogin, db: AsyncIOMotorDatabase = Depends
 # -------------------------
 @router.get("/me", response_model=schemas.UserOut)
 async def get_me(user=Depends(auth.get_current_user)):
-    """
-    Return the currently authenticated user.
-    """
     return {
         "id": str(user["_id"]),
         "username": user.get("username"),
         "email": user.get("email"),
         "whatsapp": user.get("whatsapp"),
+        "address": user.get("address"),  # 👈 add
         "role": user.get("role")
     }

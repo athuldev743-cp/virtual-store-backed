@@ -7,7 +7,7 @@ import os
 import asyncio
 from bson import ObjectId
 from fastapi import Form
-
+from datetime import datetime
 from app.database import get_db
 from app import schemas, auth
 from app.utils.twilio_utils import send_whatsapp
@@ -221,3 +221,86 @@ async def get_orders(user=Depends(auth.get_current_user), db=Depends(get_db)):
         o["id"] = str(o["_id"])
         orders.append(o)
     return orders
+from fastapi import APIRouter, HTTPException, Depends
+from bson import ObjectId
+from datetime import datetime
+import asyncio
+from app import auth, schemas
+from app.database import get_db
+from app.utils.twilio_utils import send_whatsapp
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
+router = APIRouter(tags=["Store"])
+
+@router.post("/orders")
+async def place_order(
+    product_id: str,
+    quantity: float,
+    mobile: str = None,       # Optional override from frontend
+    address: str = None,      # Optional override from frontend
+    user=Depends(auth.require_role(["customer"])),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    # ✅ Get product
+    product = await db["products"].find_one({"_id": ObjectId(product_id)})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    if product["stock"] < quantity:
+        raise HTTPException(status_code=400, detail="Not enough stock")
+
+    # ✅ Update stock
+    new_stock = product["stock"] - quantity
+    await db["products"].update_one(
+        {"_id": ObjectId(product_id)},
+        {"$set": {"stock": new_stock}}
+    )
+
+    # ✅ Prepare order data
+    order_doc = {
+        "product_id": str(product["_id"]),
+        "vendor_id": str(product["vendor_id"]),
+        "customer_id": str(user["_id"]),
+        "quantity": quantity,
+        "total": product["price"] * quantity,
+        "created_at": datetime.utcnow(),
+        "mobile": mobile or user.get("whatsapp", "N/A"),
+        "address": address or user.get("address", "N/A"),
+        "status": "pending"
+    }
+
+    # ✅ Insert order
+    result = await db["orders"].insert_one(order_doc)
+    order_doc["id"] = str(result.inserted_id)
+
+    # ✅ Get vendor info
+    vendor = await db["vendors"].find_one({"_id": ObjectId(product["vendor_id"])})
+    if vendor:
+        vendor_user = await db["users"].find_one({"_id": ObjectId(vendor["user_id"])})
+        vendor_whatsapp = vendor_user.get("whatsapp") if vendor_user else None
+
+        if vendor_whatsapp:
+            msg = (
+                f"🛒 *New Order Received!*\n\n"
+                f"📦 Product: {product['name']}\n"
+                f"⚖️ Quantity: {quantity} kg\n"
+                f"💰 Total: ₹{product['price'] * quantity:.2f}\n\n"
+                f"👤 Customer: {user.get('username', 'N/A')}\n"
+                f"📱 Mobile: {order_doc['mobile']}\n"
+                f"📍 Address: {order_doc['address']}"
+            )
+            asyncio.create_task(send_whatsapp(vendor_whatsapp, msg))
+
+    # ✅ Return order summary
+    return {
+        "id": order_doc["id"],
+        "product_id": order_doc["product_id"],
+        "vendor_id": order_doc["vendor_id"],
+        "customer_id": order_doc["customer_id"],
+        "quantity": order_doc["quantity"],
+        "total": order_doc["total"],
+        "mobile": order_doc["mobile"],
+        "address": order_doc["address"],
+        "status": order_doc["status"],
+        "remaining_stock": new_stock
+    }
