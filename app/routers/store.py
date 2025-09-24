@@ -58,6 +58,7 @@ async def list_products(db=Depends(get_db)):
 # -------------------------
 @router.post("/products", response_model=schemas.ProductOut)
 async def create_product(
+    request: Request,  # ✅ Add this
     name: str = Form(...),
     description: Optional[str] = Form(None),
     price: float = Form(0.0),
@@ -79,7 +80,7 @@ async def create_product(
     }
 
     if file:
-        product_doc["image_url"] = save_uploaded_file(file, str(vendor["_id"]))
+        product_doc["image_url"] = save_uploaded_file(file, str(vendor["_id"]), request)  # ✅ pass request
 
     result = await db["products"].insert_one(product_doc)
     product_doc["id"] = str(result.inserted_id)
@@ -87,8 +88,11 @@ async def create_product(
 
 
 
+
+
 @router.put("/products/{product_id}", response_model=schemas.ProductOut)
 async def update_product(
+    request: Request,  # ✅ add this
     product_id: str,
     name: str,
     description: str,
@@ -108,12 +112,14 @@ async def update_product(
 
     updated_data = {"name": name, "description": description, "price": price, "stock": stock}
     if file:
-        updated_data["image_url"] = save_uploaded_file(file, str(vendor["_id"]))
+        # ✅ pass request here
+        updated_data["image_url"] = save_uploaded_file(file, str(vendor["_id"]), request)
 
     await db["products"].update_one({"_id": db_product["_id"]}, {"$set": updated_data})
     updated_product = await db["products"].find_one({"_id": db_product["_id"]})
     updated_product["id"] = str(updated_product["_id"])
     return updated_product
+
 
 
 @router.delete("/products/{product_id}")
