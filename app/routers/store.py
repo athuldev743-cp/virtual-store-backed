@@ -43,8 +43,15 @@ async def list_products(db=Depends(get_db)):
         products.append(p)
     return products
 
-
-
+# ✅ Get all products for a specific vendor
+@router.get("/vendors/{vendor_id}/products", response_model=List[schemas.ProductOut])
+async def get_vendor_products(vendor_id: str, db=Depends(get_db)):
+    products_cursor = db["products"].find({"vendor_id": ObjectId(vendor_id)})
+    products = []
+    async for p in products_cursor:
+        p["id"] = str(p["_id"])
+        products.append(p)
+    return products
 
 
 # -------------------------
@@ -131,12 +138,15 @@ async def place_order(
 
 
 
-@router.get("/vendors/status/{user_id}")
-async def vendor_status(user_id: str, db=Depends(get_db)):
-    vendor = await db["vendors"].find_one({"user_id": user_id})
-    if not vendor:
-        return {"status": "none"}  # Not applied yet
-    return {"status": vendor.get("status", "pending")}
+@router.get("/vendors", response_model=List[schemas.VendorOut])
+async def list_approved_vendors(db=Depends(get_db)):
+    """Return all approved vendors for customers to browse."""
+    vendors_cursor = db["vendors"].find({"status": "approved"})
+    vendors = []
+    async for v in vendors_cursor:
+        v["id"] = str(v["_id"])
+        vendors.append(v)
+    return vendors
 
 
 @router.put("/products/{product_id}", response_model=schemas.ProductOut)
