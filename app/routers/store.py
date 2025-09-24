@@ -1,13 +1,14 @@
 # app/routers/store.py
-from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Body, Form
 from typing import List, Optional
 from pathlib import Path
 import shutil
 import os
 import asyncio
 from bson import ObjectId
-from fastapi import Form
 from datetime import datetime
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
 from app.database import get_db
 from app import schemas, auth
 from app.utils.twilio_utils import send_whatsapp
@@ -20,10 +21,7 @@ router = APIRouter(tags=["Store"])
 UPLOAD_DIR = Path("uploads/products")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 TWILIO_WHATSAPP_ADMIN = os.getenv("TWILIO_WHATSAPP_NUMBER")
-
-
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")  # ✅ Absolute URL
-TWILIO_WHATSAPP_ADMIN = os.getenv("TWILIO_WHATSAPP_NUMBER")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")  # Absolute URL
 
 
 def save_uploaded_file(file: UploadFile, vendor_id: str) -> str:
@@ -47,16 +45,6 @@ async def list_products(db=Depends(get_db)):
         products.append(p)
     return products
 
-# ✅ Get all products for a specific vendor
-@router.get("/vendors/{vendor_id}/products", response_model=List[schemas.ProductOut])
-async def get_vendor_products(vendor_id: str, db=Depends(get_db)):
-    products_cursor = db["products"].find({"vendor_id": ObjectId(vendor_id)})
-    products = []
-    async for p in products_cursor:
-        p["id"] = str(p["_id"])
-        products.append(p)
-    return products
-
 
 # -------------------------
 # Vendor Endpoints
@@ -71,7 +59,6 @@ async def create_product(
     user=Depends(auth.require_role(["vendor"])),
     db=Depends(get_db)
 ):
-    # check vendor approved
     vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
     if not vendor:
         raise HTTPException(status_code=403, detail="Vendor not approved")
@@ -84,27 +71,12 @@ async def create_product(
         "stock": stock,
     }
 
-    # ✅ Save absolute image URL
     if file:
         product_doc["image_url"] = save_uploaded_file(file, str(vendor["_id"]))
 
     result = await db["products"].insert_one(product_doc)
     product_doc["id"] = str(result.inserted_id)
     return product_doc
-
-
-
-
-@router.get("/vendors", response_model=List[schemas.VendorOut])
-async def list_approved_vendors(db=Depends(get_db)):
-    """Return all approved vendors for customers to browse."""
-    vendors_cursor = db["vendors"].find({"status": "approved"})
-    vendors = []
-    async for v in vendors_cursor:
-        v["id"] = str(v["_id"])
-        vendors.append(v)
-    return vendors
-
 
 
 @router.put("/products/{product_id}", response_model=schemas.ProductOut)
@@ -127,8 +99,6 @@ async def update_product(
         raise HTTPException(status_code=404, detail="Product not found")
 
     updated_data = {"name": name, "description": description, "price": price, "stock": stock}
-
-    # ✅ update image with absolute URL
     if file:
         updated_data["image_url"] = save_uploaded_file(file, str(vendor["_id"]))
 
@@ -154,6 +124,52 @@ async def delete_product(
 
     await db["products"].delete_one({"_id": db_product["_id"]})
     return {"detail": "Product deleted successfully"}
+
+
+@router.post("/vendors/apply", response_model=schemas.VendorOut)
+async def apply_vendor_endpoint(
+    shop_name: str = Body(...),
+    whatsapp: Optional[str] = Body(None),
+    description: Optional[str] = Body(None),
+    user=Depends(auth.require_role(["customer"])),
+    db=Depends(get_db)
+):
+    existing = await db["vendors"].find_one({
+        "user_id": str(user["_id"]),
+        "status": {"$in": ["pending", "approved"]}
+    })
+    if existing:
+        raise HTTPException(status_code=400, detail="You already have a vendor application or are a vendor")
+
+    vendor_doc = {
+        "user_id": str(user["_id"]),
+        "shop_name": shop_name,
+        "whatsapp": whatsapp or user.get("whatsapp"),
+        "description": description,
+        "status": "pending",
+        "created_at": datetime.utcnow()
+    }
+    result = await db["vendors"].insert_one(vendor_doc)
+    vendor_doc["id"] = str(result.inserted_id)
+    return vendor_doc
+
+
+@router.get("/vendors/status/{user_id}", response_model=dict)
+async def get_vendor_status(user_id: str, db=Depends(get_db)):
+    vendor = await db["vendors"].find_one({"user_id": user_id})
+    if not vendor:
+        return {"status": "none"}
+    return {"status": vendor.get("status", "pending")}
+
+
+@router.get("/vendors", response_model=List[schemas.VendorOut])
+async def list_approved_vendors(db=Depends(get_db)):
+    vendors_cursor = db["vendors"].find({"status": "approved"})
+    vendors = []
+    async for v in vendors_cursor:
+        v["id"] = str(v["_id"])
+        vendors.append(v)
+    return vendors
 
 
 # -------------------------
@@ -200,7 +216,7 @@ async def reject_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"]
 
 
 # -------------------------
-# Orders History
+# Orders Endpoints
 # -------------------------
 @router.get("/orders")
 async def get_orders(user=Depends(auth.get_current_user), db=Depends(get_db)):
@@ -221,42 +237,26 @@ async def get_orders(user=Depends(auth.get_current_user), db=Depends(get_db)):
         o["id"] = str(o["_id"])
         orders.append(o)
     return orders
-from fastapi import APIRouter, HTTPException, Depends
-from bson import ObjectId
-from datetime import datetime
-import asyncio
-from app import auth, schemas
-from app.database import get_db
-from app.utils.twilio_utils import send_whatsapp
-from motor.motor_asyncio import AsyncIOMotorDatabase
 
-router = APIRouter(tags=["Store"])
 
 @router.post("/orders")
 async def place_order(
     product_id: str,
     quantity: float,
-    mobile: str = None,       # Optional override from frontend
-    address: str = None,      # Optional override from frontend
+    mobile: str = None,
+    address: str = None,
     user=Depends(auth.require_role(["customer"])),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    # ✅ Get product
     product = await db["products"].find_one({"_id": ObjectId(product_id)})
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-
     if product["stock"] < quantity:
         raise HTTPException(status_code=400, detail="Not enough stock")
 
-    # ✅ Update stock
     new_stock = product["stock"] - quantity
-    await db["products"].update_one(
-        {"_id": ObjectId(product_id)},
-        {"$set": {"stock": new_stock}}
-    )
+    await db["products"].update_one({"_id": ObjectId(product_id)}, {"$set": {"stock": new_stock}})
 
-    # ✅ Prepare order data
     order_doc = {
         "product_id": str(product["_id"]),
         "vendor_id": str(product["vendor_id"]),
@@ -269,16 +269,13 @@ async def place_order(
         "status": "pending"
     }
 
-    # ✅ Insert order
     result = await db["orders"].insert_one(order_doc)
     order_doc["id"] = str(result.inserted_id)
 
-    # ✅ Get vendor info
     vendor = await db["vendors"].find_one({"_id": ObjectId(product["vendor_id"])})
     if vendor:
         vendor_user = await db["users"].find_one({"_id": ObjectId(vendor["user_id"])})
         vendor_whatsapp = vendor_user.get("whatsapp") if vendor_user else None
-
         if vendor_whatsapp:
             msg = (
                 f"🛒 *New Order Received!*\n\n"
@@ -291,7 +288,6 @@ async def place_order(
             )
             asyncio.create_task(send_whatsapp(vendor_whatsapp, msg))
 
-    # ✅ Return order summary
     return {
         "id": order_doc["id"],
         "product_id": order_doc["product_id"],
@@ -304,9 +300,3 @@ async def place_order(
         "status": order_doc["status"],
         "remaining_stock": new_stock
     }
-@router.get("/vendors/status/{user_id}")
-async def get_vendor_status(user_id: str, db=Depends(get_db)):
-    vendor = await db["vendors"].find_one({"user_id": user_id})
-    if not vendor:
-        return {"status": "none"}  # or "not_applied"
-    return {"status": vendor["status"]}
