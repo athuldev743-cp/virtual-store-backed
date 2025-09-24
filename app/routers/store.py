@@ -82,54 +82,16 @@ async def create_product(
         "description": description,
         "price": price,
         "stock": stock,
-        "image_url": None,  # initialize to avoid warnings
     }
 
-    # handle image upload
-    if file:
-        filename = f"{vendor['_id']}_{Path(file.filename).name}"
-        file_path = UPLOAD_DIR / filename
-        with open(file_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-        # Save URL for frontend
-        product_doc["image_url"] = f"/uploads/products/{filename}"
-
-    result = await db["products"].insert_one(product_doc)
-    product_doc["id"] = str(result.inserted_id)
-    return product_doc
-
-
-
-@router.post("/products", response_model=schemas.ProductOut)
-async def create_product(
-    name: str = Form(...),
-    description: Optional[str] = Form(None),
-    price: float = Form(0.0),
-    stock: float = Form(0.0),
-    file: Optional[UploadFile] = File(None),
-    user=Depends(auth.require_role(["vendor"])),
-    db=Depends(get_db)
-):
-    # check vendor approved
-    vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
-    if not vendor:
-        raise HTTPException(status_code=403, detail="Vendor not approved")
-
-    product_doc = {
-        "vendor_id": vendor["_id"],
-        "name": name,
-        "description": description,
-        "price": price,
-        "stock": stock,
-    }
-
-    # ✅ handle image upload
+    # ✅ Save absolute image URL
     if file:
         product_doc["image_url"] = save_uploaded_file(file, str(vendor["_id"]))
 
     result = await db["products"].insert_one(product_doc)
     product_doc["id"] = str(result.inserted_id)
     return product_doc
+
 
 
 
