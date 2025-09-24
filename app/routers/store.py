@@ -79,6 +79,7 @@ async def create_product(
     return product_doc
 
 
+
 @router.put("/products/{product_id}", response_model=schemas.ProductOut)
 async def update_product(
     product_id: str,
@@ -171,6 +172,22 @@ async def list_approved_vendors(db=Depends(get_db)):
         vendors.append(v)
     return vendors
 
+@router.get("/vendors/status/{user_id}", response_model=dict)
+async def get_vendor_status(user_id: str, db=Depends(get_db)):
+    vendor = await db["vendors"].find_one({"user_id": user_id})
+    if not vendor:
+        return {"status": "none"}
+    return {"status": vendor.get("status", "pending")}
+
+# ← Add the new route here
+@router.get("/vendors/{vendor_id}/products", response_model=List[schemas.ProductOut])
+async def get_vendor_products(vendor_id: str, db=Depends(get_db)):
+    products_cursor = db["products"].find({"vendor_id": ObjectId(vendor_id)})
+    products = []
+    async for p in products_cursor:
+        p["id"] = str(p["_id"])
+        products.append(p)
+    return products
 
 # -------------------------
 # Admin Endpoints
