@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from app.database import get_db
 from app import schemas, auth
 from app.utils.twilio_utils import send_whatsapp
+from bson.errors import InvalidId
 
 router = APIRouter(tags=["Store"])
 
@@ -196,7 +197,12 @@ async def list_approved_vendors(db=Depends(get_db)):
 
 @router.get("/vendors/{vendor_id}/products", response_model=List[schemas.ProductOut])
 async def get_vendor_products(vendor_id: str, db=Depends(get_db)):
-    products_cursor = db["products"].find({"vendor_id": ObjectId(vendor_id)})
+    try:
+        vendor_oid = ObjectId(vendor_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid vendor_id")
+
+    products_cursor = db["products"].find({"vendor_id": vendor_oid})
     products = []
     async for p in products_cursor:
         p["id"] = str(p["_id"])
