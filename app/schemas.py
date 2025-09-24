@@ -1,4 +1,3 @@
-# app/schemas.py
 from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from typing import Optional
 import re
@@ -31,14 +30,11 @@ class UserCreate(BaseModel):
             )
         return v
 
-
 class UserLogin(BaseModel):
-    email: EmailStr        # required now
+    email: EmailStr
     password: str
 
     model_config = ConfigDict(from_attributes=True)
-
-
 
 class UserOut(BaseModel):
     id: str
@@ -59,7 +55,6 @@ class UserOut(BaseModel):
             role=doc.get("role")
         )
 
-
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -75,7 +70,6 @@ class VendorApply(BaseModel):
     whatsapp: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
-
 
 class VendorOut(BaseModel):
     id: str
@@ -107,14 +101,13 @@ class ProductCreate(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-
 class ProductOut(BaseModel):
     id: str
     name: str
     description: Optional[str] = None
     price: float
     stock: int
-    image_url: Optional[str] = None  # ✅ included
+    image_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -126,37 +119,31 @@ class ProductOut(BaseModel):
             description=doc.get("description"),
             price=doc.get("price"),
             stock=doc.get("stock"),
-            image_url=doc.get("image_url")  # ✅ included
+            image_url=doc.get("image_url")
         )
 
-
-
-# -----------------------
-# Order Schemas
-# -----------------------
 # -----------------------
 # Order Schemas
 # -----------------------
 class OrderCreate(BaseModel):
     product_id: str
-    quantity: int
-    mobile: Optional[str] = None   # 👈 new
-    address: Optional[str] = None  # 👈 new
+    quantity: float  # consistent with store.py
+    mobile: Optional[str] = None
+    address: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
-
 
 class OrderOut(BaseModel):
     id: str
     product_id: str
     customer_id: str
     vendor_id: str
-    quantity: int
-    total_price: float
+    quantity: float
+    total: float  # renamed from total_price
     status: Optional[str] = "pending"
     remaining_stock: Optional[int] = None
-    mobile: Optional[str] = None   # 👈 new
-    address: Optional[str] = None  # 👈 new
+    mobile: Optional[str] = None
+    address: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -168,7 +155,7 @@ class OrderOut(BaseModel):
             customer_id=oid_str(doc.get("customer_id")),
             vendor_id=oid_str(doc.get("vendor_id")),
             quantity=doc.get("quantity"),
-            total_price=doc.get("total_price"),
+            total=doc.get("total"),
             status=doc.get("status", "pending"),
             remaining_stock=doc.get("remaining_stock"),
             mobile=doc.get("mobile"),
