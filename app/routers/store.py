@@ -9,6 +9,7 @@ from bson import ObjectId
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from fastapi import Request
 from app.database import get_db
 from app import schemas, auth
 from app.utils.twilio_utils import send_whatsapp
@@ -24,13 +25,19 @@ TWILIO_WHATSAPP_ADMIN = os.getenv("TWILIO_WHATSAPP_NUMBER")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")  # Absolute URL
 
 
-def save_uploaded_file(file: UploadFile, vendor_id: str) -> str:
-    """Save uploaded file and return absolute URL"""
+
+
+def save_uploaded_file(file: UploadFile, vendor_id: str, request: Request) -> str:
+    """Save uploaded file and return absolute URL based on the current request"""
     filename = f"{vendor_id}_{Path(file.filename).name}"
     file_path = UPLOAD_DIR / filename
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
-    return f"{BACKEND_URL}/uploads/products/{filename}" 
+
+    # Generate full URL dynamically
+    url = str(request.url_for("uploads", path=f"products/{filename}"))
+    return url
+
 
 
 # -------------------------
