@@ -167,17 +167,27 @@ async def apply_vendor_endpoint(
     if existing:
         raise HTTPException(status_code=400, detail="You already have a vendor application or are a vendor")
 
+    # --- Normalize WhatsApp number ---
+    normalized_whatsapp = whatsapp or user.get("whatsapp")
+    if normalized_whatsapp:
+        raw_number = normalized_whatsapp.strip().replace(" ", "")
+        if not raw_number.startswith("+"):
+            raw_number = "+91" + raw_number  # assume India
+        normalized_whatsapp = f"whatsapp:{raw_number}"
+
     vendor_doc = {
         "user_id": str(user["_id"]),
         "shop_name": shop_name,
-        "whatsapp": whatsapp or user.get("whatsapp"),
+        "whatsapp": normalized_whatsapp,
         "description": description,
         "status": "pending",
         "created_at": datetime.utcnow()
     }
+
     result = await db["vendors"].insert_one(vendor_doc)
     vendor_doc["id"] = str(result.inserted_id)
     return vendor_doc
+
 
 @router.get("/vendors/status/{user_id}", response_model=dict)
 async def get_vendor_status(user_id: str, db=Depends(get_db)):
