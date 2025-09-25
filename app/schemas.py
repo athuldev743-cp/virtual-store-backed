@@ -47,14 +47,16 @@ class UserOut(BaseModel):
 
     @classmethod
     def from_mongo(cls, doc):
+        whatsapp = doc.get("whatsapp")
+        if whatsapp and whatsapp.startswith("whatsapp:"):
+            whatsapp = whatsapp.replace("whatsapp:", "")
         return cls(
             id=oid_str(doc.get("_id")),
             username=doc.get("username"),
             email=doc.get("email"),
-            whatsapp=doc.get("whatsapp"),
+            whatsapp=whatsapp,
             role=doc.get("role")
         )
-
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -82,11 +84,14 @@ class VendorOut(BaseModel):
 
     @classmethod
     def from_mongo(cls, doc):
+        whatsapp = doc.get("whatsapp")
+        if whatsapp and whatsapp.startswith("whatsapp:"):
+            whatsapp = whatsapp.replace("whatsapp:", "")
         return cls(
             id=oid_str(doc.get("_id")),
             shop_name=doc.get("shop_name"),
             description=doc.get("description"),
-            whatsapp=doc.get("whatsapp"),
+            whatsapp=whatsapp,
             status=doc.get("status"),
         )
 
@@ -111,16 +116,18 @@ class ProductOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    @classmethod
-    def from_mongo(cls, doc):
-        return cls(
-            id=oid_str(doc.get("_id")),
-            name=doc.get("name"),
-            description=doc.get("description"),
-            price=doc.get("price"),
-            stock=doc.get("stock"),
-            image_url=doc.get("image_url")
-        )
+@classmethod
+def from_mongo(cls, doc):
+    whatsapp = doc.get("whatsapp")
+    if whatsapp and whatsapp.startswith("whatsapp:"):
+        whatsapp = whatsapp.replace("whatsapp:", "")
+    return cls(
+        id=oid_str(doc.get("_id")),
+        shop_name=doc.get("shop_name"),
+        description=doc.get("description"),
+        whatsapp=whatsapp,
+        status=doc.get("status"),
+    )
 
 # -----------------------
 # Order Schemas
@@ -149,6 +156,9 @@ class OrderOut(BaseModel):
 
     @classmethod
     def from_mongo(cls, doc):
+        mobile = doc.get("mobile")
+        if mobile and mobile.startswith("whatsapp:"):
+            mobile = mobile.replace("whatsapp:", "")
         return cls(
             id=oid_str(doc.get("_id")),
             product_id=oid_str(doc.get("product_id")),
@@ -158,6 +168,7 @@ class OrderOut(BaseModel):
             total=doc.get("total"),
             status=doc.get("status", "pending"),
             remaining_stock=doc.get("remaining_stock"),
-            mobile=doc.get("mobile"),
+            mobile=mobile,
             address=doc.get("address"),
         )
+
