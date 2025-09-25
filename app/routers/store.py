@@ -13,6 +13,8 @@ from app.database import get_db
 from app import schemas, auth
 from app.utils.twilio_utils import send_whatsapp
 from bson.errors import InvalidId
+from fastapi import Form
+
 
 router = APIRouter(tags=["Store"])
 
@@ -151,6 +153,35 @@ async def delete_product(
 
     await db["products"].delete_one({"_id": db_product["_id"]})
     return {"detail": "Product deleted successfully"}
+@router.post("/products", response_model=schemas.ProductOut)
+async def create_product(
+    request: Request,
+    name: str = Form(...),
+    description: str = Form(...),
+    price: float = Form(...),
+    stock: float = Form(...),
+    file: Optional[UploadFile] = File(None),
+    user=Depends(auth.require_role(["vendor"])),
+    db=Depends(get_db)
+):
+    # Check vendor approval
+    vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
+    if not vendor:
+        raise HTTPException(status_code=403, detail="Vendor not approved")
+
+    product_doc = {
+        "vendor_id": vendor["_id"],
+        "name": name,
+        "description": description,
+        "price": price,
+        "stock": stock,
+        "image_url": save_uploaded_file(file, str(vendor["_id"]), request) if file else None,
+        "created_at": datetime.utcnow()
+    }
+
+    result = await db["products"].insert_one(product_doc)
+    product_doc["id"] = str(result.inserted_id)
+    return product_doc
 
 @router.post("/vendors/apply", response_model=schemas.VendorOut)
 async def apply_vendor_endpoint(
