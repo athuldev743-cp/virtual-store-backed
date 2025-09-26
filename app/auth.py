@@ -21,7 +21,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 
 REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
 
 # -------------------------------
-# Password hashing
+# Password hashin
 # -------------------------------
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
