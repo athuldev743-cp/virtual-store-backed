@@ -14,7 +14,7 @@ from app import schemas, auth
 from app.utils.twilio_utils import send_whatsapp
 from bson.errors import InvalidId
 from fastapi import Form
-from fastapi import app
+
 
 router = APIRouter(tags=["Store"])
 
