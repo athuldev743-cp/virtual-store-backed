@@ -6,12 +6,15 @@ from fastapi.staticfiles import StaticFiles
 from app.database import connect_db, close_db
 from app.routers import users, store
 
+# -------------------------
+# FastAPI App
+# -------------------------
 app = FastAPI(title="Virtual Store Backend")
 
 # -------------------------
 # CORS configuration
 # -------------------------
-# Allow your frontend domain(s)
+# Specify your frontend domains
 origins = [
     "https://vstore-kappa.vercel.app",  # production frontend
     "http://localhost:3000",             # local frontend
@@ -19,10 +22,10 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # must match frontend exactly
-    allow_credentials=True,      # allow cookies or Authorization headers
-    allow_methods=["*"],         # allow all HTTP methods
-    allow_headers=["*"],         # allow all headers including Authorization
+    allow_origins=origins,  # must be exact domains if allow_credentials=True
+    allow_credentials=True,  # allow Authorization header and cookies
+    allow_methods=["*"],     # allow all HTTP methods
+    allow_headers=["*"],     # allow all headers including Authorization
 )
 
 # -------------------------
@@ -30,34 +33,43 @@ app.add_middleware(
 # -------------------------
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(store.router, prefix="/api/store", tags=["Store"])
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # -------------------------
-# Root endpoint to check backend
+# Serve uploaded files
+# -------------------------
+UPLOAD_DIR = "uploads"
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+# -------------------------
+# Root endpoint
 # -------------------------
 @app.get("/")
 async def root():
     return {"message": "Backend is running!"}
 
 # -------------------------
-# Startup & Shutdown events
+# Startup & Shutdown Events
 # -------------------------
 @app.on_event("startup")
 async def startup_event():
     await connect_db()
+    print("Database connected ✅")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     await close_db()
+    print("Database disconnected ✅")
 
 # -------------------------
-# Run locally
+# Local run
 # -------------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 8000)),
+        host=os.environ.get("APP_HOST", "0.0.0.0"),
+        port=int(os.environ.get("APP_PORT", 8000)),
         reload=True
     )
