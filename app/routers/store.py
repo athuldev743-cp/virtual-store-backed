@@ -14,7 +14,7 @@ from app import schemas, auth
 from app.utils.twilio_utils import send_whatsapp
 from bson.errors import InvalidId
 from fastapi import Form
-
+from fastapi import app
 
 router = APIRouter(tags=["Store"])
 
@@ -289,3 +289,6 @@ async def reject_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"]
         asyncio.create_task(send_whatsapp(user_doc.get("whatsapp"), "Your vendor application has been rejected. You can reapply later."))
 
     return {"detail": f"Vendor {vendor_id} rejected"}
+@app.get("/test-cors")
+async def test_cors():
+    return {"message": "CORS works!"}
