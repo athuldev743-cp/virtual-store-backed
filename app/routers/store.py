@@ -1,26 +1,30 @@
 # app/routers/store.py
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Body, Request, Form
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Body, Request
 from typing import List, Optional
 from pathlib import Path
 import shutil
 import os
 import asyncio
-from datetime import datetime
 from bson import ObjectId
-from bson.errors import InvalidId
+from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field
-
 from app.database import get_db
 from app import schemas, auth
 from app.utils.twilio_utils import send_whatsapp
-from app.utils.twilio_utils import TWILIO_WHATSAPP_ADMIN
-
+from bson.errors import InvalidId
+from fastapi import Form
+from fastapi import app
 
 router = APIRouter(tags=["Store"])
 
+# -------------------------
+# Config & Uploads
+# -------------------------
 UPLOAD_DIR = Path("uploads/products")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+TWILIO_WHATSAPP_ADMIN = os.getenv("TWILIO_WHATSAPP_NUMBER")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")  # Absolute URL
 
 def save_uploaded_file(file: UploadFile, vendor_id: str, request: Request) -> str:
     filename = f"{vendor_id}_{Path(file.filename).name}"
@@ -29,7 +33,6 @@ def save_uploaded_file(file: UploadFile, vendor_id: str, request: Request) -> st
         shutil.copyfileobj(file.file, f)
     url = str(request.url_for("uploads", path=f"products/{filename}"))
     return url
-
 
 # -------------------------
 # Customer Endpoints
@@ -40,27 +43,21 @@ class OrderCreate(BaseModel):
     mobile: Optional[str] = None
     address: Optional[str] = None
 
-
 @router.post("/orders")
 async def place_order(
     order: OrderCreate,
     user=Depends(auth.require_role(["customer"])),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    # 1️⃣ Find product
     product = await db["products"].find_one({"_id": ObjectId(order.product_id)})
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     if product["stock"] < order.quantity:
         raise HTTPException(status_code=400, detail="Not enough stock")
 
-    # 2️⃣ Update stock
     new_stock = product["stock"] - order.quantity
-    await db["products"].update_one(
-        {"_id": ObjectId(order.product_id)}, {"$set": {"stock": new_stock}}
-    )
+    await db["products"].update_one({"_id": ObjectId(order.product_id)}, {"$set": {"stock": new_stock}})
 
-    # 3️⃣ Create order doc
     order_doc = {
         "product_id": str(product["_id"]),
         "vendor_id": str(product["vendor_id"]),
@@ -70,29 +67,33 @@ async def place_order(
         "created_at": datetime.utcnow(),
         "mobile": order.mobile or user.get("whatsapp", "N/A"),
         "address": order.address or user.get("address", "N/A"),
-        "status": "pending",
+        "status": "pending"
     }
 
+   
     result = await db["orders"].insert_one(order_doc)
     order_doc["id"] = str(result.inserted_id)
 
-    # 4️⃣ Notify vendor via WhatsApp and wait for confirmation
+# ------------------------- 
+# Notify vendor via WhatsApp
     vendor = await db["vendors"].find_one({"_id": ObjectId(product["vendor_id"])})
-    vendor_notified = False
     if vendor and vendor.get("whatsapp"):
-        msg = (
-            f"🛒 *New Order Received!*\n\n"
-            f"📦 Product: {product['name']}\n"
-            f"⚖️ Quantity: {order.quantity} kg\n"
-            f"💰 Total: ₹{product['price'] * order.quantity:.2f}\n\n"
-            f"👤 Customer: {user.get('username', 'N/A')}\n"
-            f"📱 Mobile: {order_doc['mobile']}\n"
-            f"📍 Address: {order_doc['address']}"
-        )
-        vendor_notified = await send_whatsapp(vendor["whatsapp"], msg)
+     msg = (
+        f"🛒 *New Order Received!*\n\n"
+        f"📦 Product: {product['name']}\n"
+        f"⚖️ Quantity: {order.quantity} kg\n"
+        f"💰 Total: ₹{product['price'] * order.quantity:.2f}\n\n"
+        f"👤 Customer: {user.get('username', 'N/A')}\n"
+        f"📱 Mobile: {order_doc['mobile']}\n"
+        f"📍 Address: {order_doc['address']}"
+    )
+    whatsapp_sent = await send_whatsapp(vendor["whatsapp"], msg)
 
-    # 5️⃣ Include notification status in response
-    order_doc["vendor_notified"] = vendor_notified
+# Include in response
+    order_doc["vendor_notified"] = whatsapp_sent
+
+
+     
 
     return {
         "id": order_doc["id"],
@@ -104,10 +105,8 @@ async def place_order(
         "mobile": order_doc["mobile"],
         "address": order_doc["address"],
         "status": order_doc["status"],
-        "remaining_stock": new_stock,
-        "vendor_notified": vendor_notified,
+        "remaining_stock": new_stock
     }
-
 
 # -------------------------
 # Vendor Endpoints
@@ -313,4 +312,6 @@ async def reject_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"]
         asyncio.create_task(send_whatsapp(user_doc.get("whatsapp"), "Your vendor application has been rejected. You can reapply later."))
 
     return {"detail": f"Vendor {vendor_id} rejected"}
-
+@app.get("/test-cors")
+async def test_cors():
+    return {"message": "CORS works!"}
