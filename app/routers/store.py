@@ -186,6 +186,18 @@ async def create_product(
     product_doc["id"] = str(result.inserted_id)
     return product_doc
 
+@router.get("/products", response_model=List[schemas.ProductOut])
+async def list_all_products(db: AsyncIOMotorDatabase = Depends(get_db)):
+    products_cursor = db["products"].find({})
+    products = []
+    async for p in products_cursor:
+        p["id"] = str(p["_id"])
+        products.append(p)
+    return products
+
+
+
+
 @router.post("/vendors/apply", response_model=schemas.VendorOut)
 async def apply_vendor_endpoint(
     shop_name: str = Body(...),
