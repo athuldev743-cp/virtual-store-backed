@@ -9,13 +9,15 @@ from bson import ObjectId
 def oid_str(oid: ObjectId) -> Optional[str]:
     return str(oid) if oid else None
 
+
 # -----------------------
 # User Schemas
 # -----------------------
 class UserCreate(BaseModel):
     username: str
     email: EmailStr
-    whatsapp: Optional[str] = None
+    mobile: Optional[str] = None       # ✅ replaced whatsapp with mobile
+    address: Optional[str] = None      # ✅ new field
     password: str
 
     model_config = ConfigDict(from_attributes=True)
@@ -30,38 +32,42 @@ class UserCreate(BaseModel):
             )
         return v
 
+
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class UserOut(BaseModel):
     id: str
     username: Optional[str] = None
     email: Optional[EmailStr] = None
-    whatsapp: Optional[str] = None
+    mobile: Optional[str] = None       # ✅ replaced whatsapp with mobile
+    address: Optional[str] = None      # ✅ new field
     role: str
 
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
     def from_mongo(cls, doc):
-        whatsapp = doc.get("whatsapp")
-        if whatsapp and whatsapp.startswith("whatsapp:"):
-            whatsapp = whatsapp.replace("whatsapp:", "")
         return cls(
             id=oid_str(doc.get("_id")),
             username=doc.get("username"),
             email=doc.get("email"),
-            whatsapp=whatsapp,
+            mobile=doc.get("mobile"),
+            address=doc.get("address"),
             role=doc.get("role")
         )
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str
 
     model_config = ConfigDict(from_attributes=True)
+
 
 # -----------------------
 # Vendor Schemas
