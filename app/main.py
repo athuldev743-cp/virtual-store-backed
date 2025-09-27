@@ -14,7 +14,7 @@ app = FastAPI(title="Virtual Store Backend")
 # -------------------------
 # CORS configuration
 # -------------------------
-# Specify your frontend domains
+# Exact frontend domains
 origins = [
     "https://vstore-kappa.vercel.app",  # production frontend
     "http://localhost:3000",             # local frontend
@@ -22,10 +22,11 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # must be exact domains if allow_credentials=True
-    allow_credentials=True,  # allow Authorization header and cookies
-    allow_methods=["*"],     # allow all HTTP methods
-    allow_headers=["*"],     # allow all headers including Authorization
+    allow_origins=origins,
+    allow_credentials=True,      # allows cookies / Authorization headers
+    allow_methods=["*"],         # all HTTP methods
+    allow_headers=["*"],         # all headers
+    expose_headers=["*"],        # expose all headers
 )
 
 # -------------------------
@@ -63,7 +64,7 @@ async def shutdown_event():
     print("Database disconnected ✅")
 
 # -------------------------
-# Local run
+# Local run (optional)
 # -------------------------
 if __name__ == "__main__":
     import uvicorn
