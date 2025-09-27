@@ -9,12 +9,13 @@ router = APIRouter(tags=["Users"])
 
 @router.post("/signup", response_model=schemas.Token)
 async def signup(user: schemas.UserCreate, db: AsyncIOMotorDatabase = Depends(get_db)):
+    if db is None:
+        raise RuntimeError("Database not connected")  # explicit check
     email = (user.email or "").strip().lower()
-    print(f"[DEBUG] Signup attempt: {email}")
+    print(f"[DEBUG] Signup payload: {user}")
 
     existing = await db["users"].find_one({"email": email})
     if existing:
-        print(f"[DEBUG] Email already exists: {email}")
         raise HTTPException(status_code=400, detail="Email already registered")
 
     try:
@@ -46,6 +47,8 @@ async def signup(user: schemas.UserCreate, db: AsyncIOMotorDatabase = Depends(ge
 
 @router.post("/login", response_model=schemas.Token)
 async def login(form_data: schemas.UserLogin, db: AsyncIOMotorDatabase = Depends(get_db)):
+    if db is None:
+        raise RuntimeError("Database not connected")
     identifier = (form_data.email or "").strip().lower()
     user = await db["users"].find_one({"email": identifier})
     if not user or not verify_password(form_data.password, user.get("password", "")):

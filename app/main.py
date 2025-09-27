@@ -23,13 +23,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Exception Middleware
+# More detailed error middleware
 @app.middleware("http")
 async def catch_exceptions_middleware(request: Request, call_next):
     try:
         return await call_next(request)
     except Exception as e:
+        # Print full traceback to identify exact location
+        print("=" * 50)
+        print("ERROR TRACEBACK:")
         traceback.print_exc()
+        print("=" * 50)
         return JSONResponse(
             status_code=500,
             content={"detail": f"Internal server error: {str(e)}"}
@@ -45,12 +49,11 @@ if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
-# Root
 @app.get("/")
 async def root():
     return {"message": "Backend is running!"}
 
-# Startup & shutdown
+# Startup & Shutdown
 @app.on_event("startup")
 async def startup_event():
     await connect_db()
@@ -61,12 +64,6 @@ async def shutdown_event():
     await close_db()
     print("Database disconnected ✅")
 
-# Local run
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "app.main:app",
-        host=os.environ.get("APP_HOST", "0.0.0.0"),
-        port=int(os.environ.get("APP_PORT", 8000)),
-        reload=True
-    )
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

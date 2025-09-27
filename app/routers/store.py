@@ -62,6 +62,9 @@ async def place_order(
     user=Depends(auth.require_role(["customer"])),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
     product = await db["products"].find_one({"_id": ObjectId(order.product_id)})
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -83,30 +86,25 @@ async def place_order(
         "status": "pending"
     }
 
-   
     result = await db["orders"].insert_one(order_doc)
     order_doc["id"] = str(result.inserted_id)
 
-# ------------------------- 
-# Notify vendor via WhatsApp
+    # Notify vendor via WhatsApp
     vendor = await db["vendors"].find_one({"_id": ObjectId(product["vendor_id"])})
     if vendor and vendor.get("whatsapp"):
-     msg = (
-        f"🛒 *New Order Received!*\n\n"
-        f"📦 Product: {product['name']}\n"
-        f"⚖️ Quantity: {order.quantity} kg\n"
-        f"💰 Total: ₹{product['price'] * order.quantity:.2f}\n\n"
-        f"👤 Customer: {user.get('username', 'N/A')}\n"
-        f"📱 Mobile: {order_doc['mobile']}\n"
-        f"📍 Address: {order_doc['address']}"
-    )
-    whatsapp_sent = await send_whatsapp(vendor["whatsapp"], msg)
+        msg = (
+            f"🛒 *New Order Received!*\n\n"
+            f"📦 Product: {product['name']}\n"
+            f"⚖️ Quantity: {order.quantity} kg\n"
+            f"💰 Total: ₹{product['price'] * order.quantity:.2f}\n\n"
+            f"👤 Customer: {user.get('username', 'N/A')}\n"
+            f"📱 Mobile: {order_doc['mobile']}\n"
+            f"📍 Address: {order_doc['address']}"
+        )
+        whatsapp_sent = await send_whatsapp(vendor["whatsapp"], msg)
 
-# Include in response
+    # Include in response
     order_doc["vendor_notified"] = whatsapp_sent
-
-
-     
 
     return {
         "id": order_doc["id"],
@@ -134,8 +132,11 @@ async def update_product(
     stock: int,
     file: Optional[UploadFile] = File(None),
     user=Depends(auth.require_role(["vendor"])),
-    db=Depends(get_db)
+    db: AsyncIOMotorDatabase = Depends(get_db)
 ):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
     vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
     if not vendor:
         raise HTTPException(status_code=403, detail="Vendor not approved")
@@ -146,7 +147,7 @@ async def update_product(
 
     updated_data = {"name": name, "description": description, "price": price, "stock": stock}
     if file:
-        updated_data["image_url"] = save_uploaded_file(file, str(vendor["_id"]), request)
+        updated_data["image_url"] = save_uploaded_file(file, str(vendor["_id"]))
 
     await db["products"].update_one({"_id": db_product["_id"]}, {"$set": updated_data})
     updated_product = await db["products"].find_one({"_id": db_product["_id"]})
@@ -157,8 +158,11 @@ async def update_product(
 async def delete_product(
     product_id: str,
     user=Depends(auth.require_role(["vendor"])),
-    db=Depends(get_db)
+    db: AsyncIOMotorDatabase = Depends(get_db)
 ):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
     vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
     if not vendor:
         raise HTTPException(status_code=403, detail="Vendor not approved")
@@ -169,6 +173,7 @@ async def delete_product(
 
     await db["products"].delete_one({"_id": db_product["_id"]})
     return {"detail": "Product deleted successfully"}
+
 @router.post("/products", response_model=schemas.ProductOut)
 async def create_product(
     request: Request,
@@ -178,8 +183,11 @@ async def create_product(
     stock: float = Form(...),
     file: Optional[UploadFile] = File(None),
     user=Depends(auth.require_role(["vendor"])),
-    db=Depends(get_db)
+    db: AsyncIOMotorDatabase = Depends(get_db)
 ):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
     # Check vendor approval
     vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
     if not vendor:
@@ -191,7 +199,7 @@ async def create_product(
         "description": description,
         "price": price,
         "stock": stock,
-        "image_url": save_uploaded_file(file, str(vendor["_id"]), request) if file else None,
+        "image_url": save_uploaded_file(file, str(vendor["_id"])) if file else None,
         "created_at": datetime.utcnow()
     }
 
@@ -201,6 +209,9 @@ async def create_product(
 
 @router.get("/products", response_model=List[schemas.ProductOut])
 async def list_all_products(db: AsyncIOMotorDatabase = Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
     products_cursor = db["products"].find({})
     products = []
     async for p in products_cursor:
@@ -216,18 +227,17 @@ async def list_all_products(db: AsyncIOMotorDatabase = Depends(get_db)):
         )
     return products
 
-
-
-
-
 @router.post("/vendors/apply", response_model=schemas.VendorOut)
 async def apply_vendor_endpoint(
     shop_name: str = Body(...),
     whatsapp: Optional[str] = Body(None),
     description: Optional[str] = Body(None),
     user=Depends(auth.require_role(["customer"])),
-    db=Depends(get_db)
+    db: AsyncIOMotorDatabase = Depends(get_db)
 ):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
     existing = await db["vendors"].find_one({
         "user_id": str(user["_id"]),
         "status": {"$in": ["pending", "approved"]}
@@ -276,16 +286,21 @@ async def apply_vendor_endpoint(
 
     return vendor_doc
 
-
 @router.get("/vendors/status/{user_id}", response_model=dict)
-async def get_vendor_status(user_id: str, db=Depends(get_db)):
+async def get_vendor_status(user_id: str, db: AsyncIOMotorDatabase = Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
     vendor = await db["vendors"].find_one({"user_id": user_id})
     if not vendor:
         return {"status": "none"}
     return {"status": vendor.get("status", "pending")}
 
 @router.get("/vendors", response_model=List[schemas.VendorOut])
-async def list_approved_vendors(db=Depends(get_db)):
+async def list_approved_vendors(db: AsyncIOMotorDatabase = Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
     vendors_cursor = db["vendors"].find({"status": "approved"})
     vendors = []
     async for v in vendors_cursor:
@@ -294,7 +309,10 @@ async def list_approved_vendors(db=Depends(get_db)):
     return vendors
 
 @router.get("/vendors/{vendor_id}/products", response_model=List[schemas.ProductOut])
-async def get_vendor_products(vendor_id: str, db=Depends(get_db)):
+async def get_vendor_products(vendor_id: str, db: AsyncIOMotorDatabase = Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
     try:
         vendor_oid = ObjectId(vendor_id)
     except InvalidId:
@@ -311,7 +329,10 @@ async def get_vendor_products(vendor_id: str, db=Depends(get_db)):
 # Admin Endpoints
 # -------------------------
 @router.get("/vendors/pending", response_model=List[schemas.VendorOut])
-async def list_pending_vendors(user=Depends(auth.require_role(["admin"])), db=Depends(get_db)):
+async def list_pending_vendors(user=Depends(auth.require_role(["admin"])), db: AsyncIOMotorDatabase = Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
     vendors_cursor = db["vendors"].find({"status": "pending"})
     vendors = []
     async for v in vendors_cursor:
@@ -320,7 +341,10 @@ async def list_pending_vendors(user=Depends(auth.require_role(["admin"])), db=De
     return vendors
 
 @router.post("/vendors/{vendor_id}/approve")
-async def approve_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"])), db=Depends(get_db)):
+async def approve_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"])), db: AsyncIOMotorDatabase = Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
     vendor = await db["vendors"].find_one({"_id": ObjectId(vendor_id)})
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
@@ -335,7 +359,10 @@ async def approve_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"
     return {"detail": f"Vendor {vendor_id} approved"}
 
 @router.post("/vendors/{vendor_id}/reject")
-async def reject_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"])), db=Depends(get_db)):
+async def reject_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"])), db: AsyncIOMotorDatabase = Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
     vendor = await db["vendors"].find_one({"_id": ObjectId(vendor_id)})
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
@@ -346,4 +373,3 @@ async def reject_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"]
         asyncio.create_task(send_whatsapp(user_doc.get("whatsapp"), "Your vendor application has been rejected. You can reapply later."))
 
     return {"detail": f"Vendor {vendor_id} rejected"}
-

@@ -26,13 +26,13 @@ async def connect_db() -> None:
 async def close_db() -> None:
     """Close MongoDB connection"""
     global client
-    if client:
+    if client is not None:  # FIXED: Changed from "if client:"
         client.close()
         print("MongoDB connection closed ✅")
 
 # FastAPI dependency
 async def get_db() -> AsyncGenerator[AsyncIOMotorDatabase, None]:
     """Yield the database instance"""
-    if not db:
+    if db is None:  # FIXED: Changed from "if not db:"
         raise RuntimeError("Database not connected")
     yield db
