@@ -11,6 +11,7 @@ from app.database import get_db
 router = APIRouter(tags=["Users"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
 # -------------------------
 # Signup
 # -------------------------
@@ -44,10 +45,8 @@ async def signup(user: schemas.UserCreate, db: AsyncIOMotorDatabase = Depends(ge
         return {"access_token": access_token, "token_type": "bearer"}
 
     except Exception as e:
-        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error")
-
 
 
 # -------------------------
@@ -72,6 +71,7 @@ async def login(form_data: schemas.UserLogin, db: AsyncIOMotorDatabase = Depends
 
     return {"access_token": token, "token_type": "bearer"}
 
+
 # -------------------------
 # Get Current User
 # -------------------------
@@ -81,7 +81,7 @@ async def get_me(user=Depends(auth.get_current_user)):
         "id": str(user["_id"]),
         "username": user.get("username"),
         "email": user.get("email"),
-        "whatsapp": user.get("whatsapp"),
+        "mobile": user.get("mobile"),   # fixed from whatsapp
         "address": user.get("address"),
         "role": user.get("role")
     }

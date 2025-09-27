@@ -204,9 +204,18 @@ async def list_all_products(db: AsyncIOMotorDatabase = Depends(get_db)):
     products_cursor = db["products"].find({})
     products = []
     async for p in products_cursor:
-        p["id"] = str(p["_id"])
-        products.append(p)
+        products.append(
+            schemas.ProductOut(
+                id=str(p["_id"]),
+                name=p.get("name", ""),
+                description=p.get("description"),
+                price=p.get("price", 0),
+                stock=p.get("stock", 0),
+                image_url=p.get("image_url")
+            )
+        )
     return products
+
 
 
 
