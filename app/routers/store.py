@@ -37,15 +37,7 @@ def save_uploaded_file(file: UploadFile, vendor_id: str) -> str:
     backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")  # must be correct
     return f"{backend_url.rstrip('/')}/uploads/products/{filename}"
 
-@router.get("/uploads/{path:path}", name="uploads")
-async def serve_uploaded_file(path: str):
-    BASE_DIR = Path(__file__).resolve().parent.parent  # project root
-    file_path = BASE_DIR / "uploads" / path
 
-    if file_path.exists() and file_path.is_file():
-        return FileResponse(file_path)
-
-    raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
 
 # -------------------------
 # Customer Endpoints
