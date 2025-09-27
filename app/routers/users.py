@@ -11,7 +11,6 @@ from app.database import get_db
 router = APIRouter(tags=["Users"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-
 # -------------------------
 # Signup
 # -------------------------
@@ -24,10 +23,13 @@ async def signup(user: schemas.UserCreate, db: AsyncIOMotorDatabase = Depends(ge
         raise HTTPException(status_code=400, detail="Email already registered")
 
     try:
+        # Truncate password to 72 bytes for bcrypt
+        safe_password = user.password[:72]
+
         user_dict = {
             "username": user.username,
             "email": email,
-            "password": hash_password(user.password),
+            "password": hash_password(safe_password),
             "mobile": user.mobile or "",
             "address": user.address or "",
             "role": "customer",
@@ -44,7 +46,7 @@ async def signup(user: schemas.UserCreate, db: AsyncIOMotorDatabase = Depends(ge
 
         return {"access_token": access_token, "token_type": "bearer"}
 
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -57,7 +59,13 @@ async def login(form_data: schemas.UserLogin, db: AsyncIOMotorDatabase = Depends
     identifier = (form_data.email or "").strip().lower()
     user = await db["users"].find_one({"email": identifier})
 
-    if not user or not pwd_context.verify(form_data.password, user.get("password", "")):
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    # Truncate password to 72 bytes for bcrypt
+    safe_password = form_data.password[:72]
+
+    if not pwd_context.verify(safe_password, user.get("password", "")):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = auth.create_access_token(
@@ -81,7 +89,7 @@ async def get_me(user=Depends(auth.get_current_user)):
         "id": str(user["_id"]),
         "username": user.get("username"),
         "email": user.get("email"),
-        "mobile": user.get("mobile"),   # fixed from whatsapp
+        "mobile": user.get("mobile"),
         "address": user.get("address"),
         "role": user.get("role")
     }
