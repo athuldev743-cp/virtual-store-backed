@@ -14,7 +14,34 @@ origins = [
     "https://vstore-kappa.vercel.app",
     "http://localhost:3000",
 ]
+# Add this to your main.py - AFTER the imports and BEFORE the CORS middleware
+@app.get("/debug/users-code")
+async def debug_users_code():
+    """Check what code is actually running in the users router"""
+    import inspect
+    try:
+        from app.routers import users
+        signup_source = inspect.getsource(users.signup)
+        return {
+            "status": "success",
+            "signup_function_code": signup_source
+        }
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
 
+@app.get("/debug/auth-code")  
+async def debug_auth_code():
+    """Check what code is actually running in auth"""
+    import inspect
+    try:
+        from app.auth import hash_password
+        hash_source = inspect.getsource(hash_password)
+        return {
+            "status": "success", 
+            "hash_password_function_code": hash_source
+        }
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
