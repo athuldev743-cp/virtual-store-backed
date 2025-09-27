@@ -1,11 +1,12 @@
 import os
 import traceback
+import sys  # Add this import
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from app.database import connect_db, close_db
-from app.routers import users, store
+from app.routers import users, store  # Remove , sys from here
 
 app = FastAPI(title="Virtual Store Backend")
 
@@ -14,7 +15,8 @@ origins = [
     "https://vstore-kappa.vercel.app",
     "http://localhost:3000",
 ]
-# Add this to your main.py - AFTER the imports and BEFORE the CORS middleware
+
+# Debug endpoints - move before CORS middleware
 @app.get("/debug/users-code")
 async def debug_users_code():
     """Check what code is actually running in the users router"""
@@ -42,6 +44,19 @@ async def debug_auth_code():
         }
     except Exception as e:
         return {"status": "error", "detail": str(e)}
+
+@app.get("/debug/versions")
+async def debug_versions():
+    import passlib
+    import pydantic
+    import fastapi
+    return {
+        "passlib_version": passlib.__version__,
+        "pydantic_version": pydantic.__version__,
+        "fastapi_version": fastapi.__version__,
+        "python_version": sys.version
+    }
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -54,13 +69,19 @@ app.add_middleware(
 @app.middleware("http")
 async def catch_exceptions_middleware(request: Request, call_next):
     try:
-        return await call_next(request)
+        response = await call_next(request)
+        return response
     except Exception as e:
-        # Print full traceback to identify exact location
-        print("=" * 50)
-        print("ERROR TRACEBACK:")
-        traceback.print_exc()
-        print("=" * 50)
+        # Print FULL traceback to identify exact location
+        print("=" * 80)
+        print("FULL ERROR TRACEBACK:")
+        error_traceback = traceback.format_exc()
+        print(error_traceback)
+        print("=" * 80)
+        
+        # Also log the request details
+        print(f"Request: {request.method} {request.url}")
+        
         return JSONResponse(
             status_code=500,
             content={"detail": f"Internal server error: {str(e)}"}

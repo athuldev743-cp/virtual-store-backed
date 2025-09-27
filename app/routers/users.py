@@ -19,14 +19,17 @@ async def signup(user: schemas.UserCreate, db: AsyncIOMotorDatabase = Depends(ge
         raise HTTPException(status_code=400, detail="Email already registered")
 
     try:
-        # REMOVE OR COMMENT OUT THIS CHECK - hash_password handles truncation now
-        # if len(user.password.encode("utf-8")) > 72:
-        #     raise HTTPException(status_code=400, detail="Password too long (max 72 chars)")
-
+        print(f"[DEBUG] Before hash_password call")
+        print(f"[DEBUG] Password length: {len(user.password)} chars, {len(user.password.encode('utf-8'))} bytes")
+        
+        # Test the hash_password function directly
+        test_hash = hash_password(user.password)
+        print(f"[DEBUG] hash_password succeeded: {test_hash[:50]}...")
+        
         user_dict = {
             "username": user.username,
             "email": email,
-            "password": hash_password(user.password),  # hash_password now handles truncation
+            "password": test_hash,  # Use the already hashed password
             "mobile": user.mobile or "",
             "address": user.address or "",
             "role": "customer",
@@ -39,15 +42,11 @@ async def signup(user: schemas.UserCreate, db: AsyncIOMotorDatabase = Depends(ge
         access_token = auth.create_access_token(token_data)
         return {"access_token": access_token, "token_type": "bearer"}
 
-    except HTTPException:
-        raise
     except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-    except HTTPException:
-        raise
-    except Exception as e:
+        print(f"[DEBUG] ERROR TYPE: {type(e)}")
+        print(f"[DEBUG] ERROR MESSAGE: {str(e)}")
+        import traceback
+        print(f"[DEBUG] FULL TRACEBACK:")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
