@@ -31,13 +31,10 @@ def hash_password(password: str) -> str:
     Hash a plain password with bcrypt.
     Truncate to 72 chars to prevent errors.
     """
-    # Truncate password to 72 bytes for bcrypt
-    if len(password.encode('utf-8')) > 72:
-        # Convert to bytes and truncate, then back to string
-        password_bytes = password.encode('utf-8')[:72]
-        # Try to decode back to string, replacing invalid characters
-        password = password_bytes.decode('utf-8', errors='ignore')
-    return pwd_context.hash(password)
+    # Simple character truncation (safer)
+    truncated_password = password[:72]  # Truncate to 72 characters
+    
+    return pwd_context.hash(truncated_password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
