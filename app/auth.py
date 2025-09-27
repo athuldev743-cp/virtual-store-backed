@@ -1,9 +1,9 @@
-# app/auth.py
+# app/auth.py - Using bcrypt directly
+import bcrypt
 import os
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from jose import jwt, JWTError
-from passlib.context import CryptContext
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
@@ -13,35 +13,30 @@ from bson import ObjectId
 
 load_dotenv()
 
-# -------------------------------
-# Environment variables
-# -------------------------------
 SECRET_KEY: str = os.getenv("SECRET_KEY", "supersecretkey123")
 ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
 REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
 
 # -------------------------------
-# Password hashing
+# Password hashing with bcrypt directly
 # -------------------------------
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 def hash_password(password: str) -> str:
-    """
-    Hash a plain password with bcrypt.
-    Truncate to 72 chars to prevent errors.
-    """
-    # Simple character truncation (safer)
-    truncated_password = password[:72]  # Truncate to 72 characters
-    
-    return pwd_context.hash(truncated_password)
+    """Hash a password using bcrypt (automatically handles 72-byte limit)"""
+    # bcrypt internally handles the 72-byte limit, but we'll truncate to be safe
+    password_bytes = password.encode('utf-8')[:72]
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    return hashed.decode('utf-8')
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    plain_bytes = plain_password.encode('utf-8')[:72]
+    hashed_bytes = hashed_password.encode('utf-8')
+    return bcrypt.checkpw(plain_bytes, hashed_bytes)
 
 # -------------------------------
-# JWT Tokens
+# JWT Tokens (unchanged)
 # -------------------------------
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/login")
 
