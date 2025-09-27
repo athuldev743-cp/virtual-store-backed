@@ -16,6 +16,9 @@ from bson.errors import InvalidId
 from fastapi import Form
 from fastapi.responses import FileResponse
 from pathlib import Path
+import cloudinary 
+import cloudinary.uploader
+import cloudinary.api
 
 router = APIRouter(tags=["Store"])
 
@@ -27,15 +30,34 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 TWILIO_WHATSAPP_ADMIN = os.getenv("TWILIO_WHATSAPP_NUMBER")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")  # Absolute URL
 
-def save_uploaded_file(file: UploadFile, vendor_id: str) -> str:
-    filename = f"{vendor_id}_{Path(file.filename).name}"
-    file_path = UPLOAD_DIR / filename
 
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+# -------------------------
+# Cloudinary setup
+# -------------------------
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+    secure=True
+)
 
-    backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")  # must be correct
-    return f"{backend_url.rstrip('/')}/uploads/products/{filename}"
+def upload_to_cloudinary(file: UploadFile, folder: str = "virtual_store") -> str:
+    """
+    Uploads a file to Cloudinary and returns the secure URL
+    """
+    try:
+        result = cloudinary.uploader.upload(
+            file.file,
+            folder=folder,
+            public_id=f"{folder}_{Path(file.filename).stem}_{int(datetime.utcnow().timestamp())}",
+            overwrite=True,
+            resource_type="image"
+        )
+        return result.get("secure_url")
+    except Exception as e:
+        print("Cloudinary upload failed:", e)
+        return None
+
 
 
 
@@ -138,13 +160,16 @@ async def update_product(
         raise HTTPException(status_code=404, detail="Product not found")
 
     updated_data = {"name": name, "description": description, "price": price, "stock": stock}
+    
     if file:
-        updated_data["image_url"] = save_uploaded_file(file, str(vendor["_id"]))
+        # Upload image to Cloudinary instead of local storage
+        updated_data["image_url"] = upload_to_cloudinary(file, folder=f"vendor_{vendor['_id']}")
 
     await db["products"].update_one({"_id": db_product["_id"]}, {"$set": updated_data})
     updated_product = await db["products"].find_one({"_id": db_product["_id"]})
     updated_product["id"] = str(updated_product["_id"])
     return updated_product
+
 
 @router.delete("/products/{product_id}")
 async def delete_product(
@@ -185,13 +210,17 @@ async def create_product(
     if not vendor:
         raise HTTPException(status_code=403, detail="Vendor not approved")
 
+    image_url = None
+    if file:
+        image_url = upload_to_cloudinary(file, folder=f"vendor_{vendor['_id']}")
+
     product_doc = {
         "vendor_id": vendor["_id"],
         "name": name,
         "description": description,
         "price": price,
         "stock": stock,
-        "image_url": save_uploaded_file(file, str(vendor["_id"])) if file else None,
+        "image_url": image_url,
         "created_at": datetime.utcnow()
     }
 
