@@ -21,20 +21,22 @@ ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 
 REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
 
 # -------------------------------
-# Password hashing
+# Password hashin
 # -------------------------------
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-MAX_BCRYPT_PASSWORD_LENGTH = 72  # bcrypt limit
 
 def hash_password(password: str) -> str:
-    """Hash a plain password (truncated to 72 chars)"""
-    safe_password = password[:MAX_BCRYPT_PASSWORD_LENGTH]
-    return pwd_context.hash(safe_password)
+    """
+    Hash a plain password with bcrypt.
+    Truncate to 72 chars to prevent errors.
+    """
+    truncated_password = password[:72]  # bcrypt max 72 bytes
+    return pwd_context.hash(truncated_password)
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash (truncated to 72 chars)"""
-    safe_password = plain_password[:MAX_BCRYPT_PASSWORD_LENGTH]
-    return pwd_context.verify(safe_password, hashed_password)
+    """Verify a password against its hash"""
+    return pwd_context.verify(plain_password, hashed_password)
 
 # -------------------------------
 # JWT Tokens
@@ -72,7 +74,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         raise credentials_exception
 
     db = get_db()
+    # ------------------- FIX HERE -------------------
     user = await db["users"].find_one({"_id": ObjectId(identifier)})
+    # -------------------------------------------------
     if not user:
         raise credentials_exception
     return user

@@ -1,7 +1,6 @@
 # app/routers/users.py
 from fastapi import APIRouter, HTTPException, Depends
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from passlib.context import CryptContext
 from app import schemas, auth
 from app.auth import hash_password, verify_password
 from app.database import get_db
@@ -9,7 +8,6 @@ from bson import ObjectId
 import traceback
 
 router = APIRouter(tags=["Users"])
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # -------------------------
 # Signup
@@ -23,10 +21,13 @@ async def signup(user: schemas.UserCreate, db: AsyncIOMotorDatabase = Depends(ge
         raise HTTPException(status_code=400, detail="Email already registered")
 
     try:
+        # Truncate password to 72 chars to prevent bcrypt error
+        safe_password = user.password[:72]
+
         user_dict = {
             "username": user.username,
             "email": email,
-            "password": hash_password(user.password),  # truncated automatically in auth.py
+            "password": hash_password(safe_password),
             "mobile": user.mobile or "",
             "address": user.address or "",
             "role": "customer",
@@ -56,7 +57,7 @@ async def login(form_data: schemas.UserLogin, db: AsyncIOMotorDatabase = Depends
     identifier = (form_data.email or "").strip().lower()
     user = await db["users"].find_one({"email": identifier})
 
-    if not user or not verify_password(form_data.password, user.get("password", "")):
+    if not user or not verify_password(form_data.password[:72], user.get("password", "")):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = auth.create_access_token(
@@ -80,7 +81,7 @@ async def get_me(user=Depends(auth.get_current_user)):
         "id": str(user["_id"]),
         "username": user.get("username"),
         "email": user.get("email"),
-        "mobile": user.get("mobile"),      # updated field
-        "address": user.get("address"),    # updated field
+        "mobile": user.get("mobile"),
+        "address": user.get("address"),
         "role": user.get("role")
     }
