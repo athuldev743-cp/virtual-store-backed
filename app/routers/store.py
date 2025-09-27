@@ -14,7 +14,7 @@ from app import schemas, auth
 from app.utils.twilio_utils import send_whatsapp
 from bson.errors import InvalidId
 from fastapi import Form
-
+from fastapi.responses import FileResponse
 
 router = APIRouter(tags=["Store"])
 
@@ -26,14 +26,22 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 TWILIO_WHATSAPP_ADMIN = os.getenv("TWILIO_WHATSAPP_NUMBER")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")  # Absolute URL
 
-def save_uploaded_file(file: UploadFile, vendor_id: str, request: Request) -> str:
+def save_uploaded_file(file: UploadFile, vendor_id: str) -> str:
     filename = f"{vendor_id}_{Path(file.filename).name}"
     file_path = UPLOAD_DIR / filename
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
-    url = str(request.url_for("uploads", path=f"products/{filename}"))
-    return url
+    
+    # Use absolute backend URL
+    backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")  # Must be correct in production
+    return f"{backend_url.rstrip('/')}/uploads/products/{filename}"
 
+@router.get("/uploads/{path:path}", name="uploads")
+async def serve_uploaded_file(path: str):
+    file_path = Path("uploads") / path
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(file_path)
+    raise HTTPException(status_code=404, detail="File not found")
 # -------------------------
 # Customer Endpoints
 # -------------------------
