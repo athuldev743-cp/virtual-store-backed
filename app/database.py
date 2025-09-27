@@ -1,43 +1,38 @@
-# app/database.py
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 import os
 from dotenv import load_dotenv
+from typing import AsyncGenerator
 
 load_dotenv()
 
 MONGO_URL = os.getenv("MONGO_URL")
 if not MONGO_URL:
-    raise RuntimeError("MONGO_URL is missing in environment")
+    raise RuntimeError("MONGO_URL missing in environment")
 
-# Global client variable
 client: AsyncIOMotorClient | None = None
+db: AsyncIOMotorDatabase | None = None
 
-# -------------------------
-# Connect to MongoDB
-# -------------------------
-async def connect_db():
-    global client
-    client = AsyncIOMotorClient(MONGO_URL)
+async def connect_db() -> None:
+    """Connect to MongoDB on startup"""
+    global client, db
     try:
-        await client.admin.command("ping")
+        client = AsyncIOMotorClient(MONGO_URL)
+        db = client["virtual_store"]
+        await db.command("ping")
         print("MongoDB connected ✅")
     except Exception as e:
         raise RuntimeError(f"MongoDB connection failed: {e}")
 
-# -------------------------
-# Dependency for FastAPI
-# -------------------------
-def get_db() -> AsyncIOMotorDatabase:
-    """Return the virtual_store database instance for FastAPI dependencies"""
-    if not client:
-        raise RuntimeError("Database not connected")
-    return client["virtual_store"]
-
-# -------------------------
-# Close MongoDB connection
-# -------------------------
-async def close_db():
+async def close_db() -> None:
+    """Close MongoDB connection"""
     global client
     if client:
         client.close()
         print("MongoDB connection closed ✅")
+
+# FastAPI dependency
+async def get_db() -> AsyncGenerator[AsyncIOMotorDatabase, None]:
+    """Yield the database instance"""
+    if not db:
+        raise RuntimeError("Database not connected")
+    yield db

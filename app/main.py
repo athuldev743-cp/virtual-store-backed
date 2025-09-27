@@ -1,58 +1,56 @@
-# app/main.py
 import os
-from fastapi import FastAPI
+import traceback
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from app.database import connect_db, close_db
 from app.routers import users, store
 
-# -------------------------
-# FastAPI App
-# -------------------------
 app = FastAPI(title="Virtual Store Backend")
 
-# -------------------------
-# CORS configuration
-# -------------------------
-# Exact frontend domains
+# CORS
 origins = [
-    "https://vstore-kappa.vercel.app",  # production frontend
-    "http://localhost:3000",             # local frontend
+    "https://vstore-kappa.vercel.app",
+    "http://localhost:3000",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,      # allows cookies / Authorization headers
-    allow_methods=["*"],         # all HTTP methods
-    allow_headers=["*"],         # all headers
-    expose_headers=["*"],        # expose all headers
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# -------------------------
-# Include Routers
-# -------------------------
+# Exception Middleware
+@app.middleware("http")
+async def catch_exceptions_middleware(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Internal server error: {str(e)}"}
+        )
+
+# Routers
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(store.router, prefix="/api/store", tags=["Store"])
 
-# -------------------------
-# Serve uploaded files
-# -------------------------
+# Serve uploads
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
-# -------------------------
-# Root endpoint
-# -------------------------
+# Root
 @app.get("/")
 async def root():
     return {"message": "Backend is running!"}
 
-# -------------------------
-# Startup & Shutdown Events
-# -------------------------
+# Startup & shutdown
 @app.on_event("startup")
 async def startup_event():
     await connect_db()
@@ -63,9 +61,7 @@ async def shutdown_event():
     await close_db()
     print("Database disconnected ✅")
 
-# -------------------------
-# Local run (optional)
-# -------------------------
+# Local run
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
