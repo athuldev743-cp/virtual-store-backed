@@ -340,6 +340,7 @@ async def list_pending_vendors(user=Depends(auth.require_role(["admin"])), db: A
         vendors.append(v)
     return vendors
 
+# In your store.py - modify the approve_vendor endpoint
 @router.post("/vendors/{vendor_id}/approve")
 async def approve_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"])), db: AsyncIOMotorDatabase = Depends(get_db)):
     if db is None:
@@ -352,11 +353,25 @@ async def approve_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"
     await db["vendors"].update_one({"_id": ObjectId(vendor_id)}, {"$set": {"status": "approved"}})
     await db["users"].update_one({"_id": ObjectId(vendor["user_id"])}, {"$set": {"role": "vendor"}})
 
-    user_doc = await db["users"].find_one({"_id": ObjectId(vendor["user_id"])})
-    if user_doc and user_doc.get("whatsapp"):
-        asyncio.create_task(send_whatsapp(user_doc.get("whatsapp"), "Congratulations! Your vendor application has been approved."))
+    # Get the updated user to create a new token
+    updated_user = await db["users"].find_one({"_id": ObjectId(vendor["user_id"])})
+    
+    # Create new token with updated role
+    new_token_data = {
+        "sub": str(updated_user["_id"]),
+        "role": updated_user.get("role", "vendor"),
+        "email": updated_user.get("email")
+    }
+    new_token = auth.create_access_token(new_token_data)
 
-    return {"detail": f"Vendor {vendor_id} approved"}
+    # Notify user
+    if updated_user and updated_user.get("whatsapp"):
+        asyncio.create_task(send_whatsapp(updated_user.get("whatsapp"), "Congratulations! Your vendor application has been approved."))
+
+    return {
+        "detail": f"Vendor {vendor_id} approved",
+        "new_token": new_token  # Return the new token
+    }
 
 @router.post("/vendors/{vendor_id}/reject")
 async def reject_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"])), db: AsyncIOMotorDatabase = Depends(get_db)):
