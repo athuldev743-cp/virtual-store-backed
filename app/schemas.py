@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from typing import Optional
 import re
 from bson import ObjectId
+from datetime import datetime  # ✅ ADD THIS IMPORT
 
 # -----------------------
 # Helper function
@@ -82,24 +83,24 @@ class VendorApply(BaseModel):
 class VendorOut(BaseModel):
     id: str
     shop_name: str
-    description: Optional[str] = None
     whatsapp: Optional[str] = None
+    description: Optional[str] = None
     status: str
-
-    model_config = ConfigDict(from_attributes=True)
-
+    created_at: Optional[datetime] = None
+    
     @classmethod
-    def from_mongo(cls, doc):
-        whatsapp = doc.get("whatsapp")
-        if whatsapp and whatsapp.startswith("whatsapp:"):
-            whatsapp = whatsapp.replace("whatsapp:", "")
-        return cls(
-            id=oid_str(doc.get("_id")),
-            shop_name=doc.get("shop_name"),
-            description=doc.get("description"),
-            whatsapp=whatsapp,
-            status=doc.get("status"),
-        )
+    def from_mongo(cls, vendor_dict):
+        """Convert MongoDB document to VendorOut"""
+        if not vendor_dict:
+            return None
+            
+        # Convert ObjectId to string
+        if '_id' in vendor_dict:
+            vendor_dict = vendor_dict.copy()
+            vendor_dict['id'] = str(vendor_dict['_id'])
+            
+        return cls(**vendor_dict)
+
 
 # -----------------------
 # Product Schemas
@@ -119,21 +120,24 @@ class ProductOut(BaseModel):
     price: float
     stock: int
     image_url: Optional[str] = None
+    
+    @classmethod
+    def from_mongo(cls, product_dict):
+        """Convert MongoDB document to ProductOut"""
+        if not product_dict:
+            return None
+            
+        # Convert ObjectId to string
+        if '_id' in product_dict:
+            product_dict = product_dict.copy()
+            product_dict['id'] = str(product_dict['_id'])
+        
+        # Ensure stock is integer
+        if 'stock' in product_dict and isinstance(product_dict['stock'], float):
+            product_dict['stock'] = int(product_dict['stock'])
+            
+        return cls(**product_dict)
 
-    model_config = ConfigDict(from_attributes=True)
-
-@classmethod
-def from_mongo(cls, doc):
-    whatsapp = doc.get("whatsapp")
-    if whatsapp and whatsapp.startswith("whatsapp:"):
-        whatsapp = whatsapp.replace("whatsapp:", "")
-    return cls(
-        id=oid_str(doc.get("_id")),
-        shop_name=doc.get("shop_name"),
-        description=doc.get("description"),
-        whatsapp=whatsapp,
-        status=doc.get("status"),
-    )
 
 # -----------------------
 # Order Schemas
@@ -159,5 +163,3 @@ class OrderOut(BaseModel):
     address: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
-
-
