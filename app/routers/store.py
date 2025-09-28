@@ -58,9 +58,6 @@ def upload_to_cloudinary(file: UploadFile, folder: str = "virtual_store") -> str
         print("Cloudinary upload failed:", e)
         return None
 
-
-
-
 # -------------------------
 # Customer Endpoints
 # -------------------------
@@ -82,10 +79,16 @@ async def place_order(
     product = await db["products"].find_one({"_id": ObjectId(order.product_id)})
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    if product["stock"] < order.quantity:
+    
+    # Convert stock to int if it's float
+    product_stock = product.get("stock", 0)
+    if isinstance(product_stock, float):
+        product_stock = int(product_stock)
+    
+    if product_stock < order.quantity:
         raise HTTPException(status_code=400, detail="Not enough stock")
 
-    new_stock = product["stock"] - order.quantity
+    new_stock = product_stock - order.quantity
     await db["products"].update_one({"_id": ObjectId(order.product_id)}, {"$set": {"stock": new_stock}})
 
     order_doc = {
@@ -132,6 +135,7 @@ async def place_order(
         "status": order_doc["status"],
         "remaining_stock": new_stock
     }
+
 @router.get("/products/{product_id}", response_model=schemas.ProductOut)
 async def get_product(product_id: str, db: AsyncIOMotorDatabase = Depends(get_db)):
     if db is None:
@@ -142,8 +146,39 @@ async def get_product(product_id: str, db: AsyncIOMotorDatabase = Depends(get_db
         raise HTTPException(status_code=400, detail="Invalid product ID")
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    product["id"] = str(product["_id"])
-    return product
+    
+    # Convert stock to int if it's float
+    stock = product.get("stock", 0)
+    if isinstance(stock, float):
+        stock = int(stock)
+        product["stock"] = stock
+    
+    return schemas.ProductOut.from_mongo(product)
+
+@router.get("/products", response_model=List[schemas.ProductOut])
+async def list_all_products(db: AsyncIOMotorDatabase = Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
+    products_cursor = db["products"].find({})
+    products = []
+    async for p in products_cursor:
+        # Convert stock to int if it's float
+        stock = p.get("stock", 0)
+        if isinstance(stock, float):
+            stock = int(stock)
+        
+        products.append(
+            schemas.ProductOut(
+                id=str(p["_id"]),
+                name=p.get("name", ""),
+                description=p.get("description"),
+                price=p.get("price", 0),
+                stock=stock,  # Use converted stock value
+                image_url=p.get("image_url")
+            )
+        )
+    return products
 
 # -------------------------
 # Vendor Endpoints
@@ -179,9 +214,20 @@ async def update_product(
 
     await db["products"].update_one({"_id": db_product["_id"]}, {"$set": updated_data})
     updated_product = await db["products"].find_one({"_id": db_product["_id"]})
-    updated_product["id"] = str(updated_product["_id"])
-    return updated_product
-
+    
+    # Convert stock to int if it's float
+    stock = updated_product.get("stock", 0)
+    if isinstance(stock, float):
+        stock = int(stock)
+    
+    return schemas.ProductOut(
+        id=str(updated_product["_id"]),
+        name=updated_product.get("name", ""),
+        description=updated_product.get("description"),
+        price=updated_product.get("price", 0),
+        stock=stock,
+        image_url=updated_product.get("image_url")
+    )
 
 @router.delete("/products/{product_id}")
 async def delete_product(
@@ -226,6 +272,10 @@ async def create_product(
     if file:
         image_url = upload_to_cloudinary(file, folder=f"vendor_{vendor['_id']}")
 
+    # Convert stock to int if it's float
+    if isinstance(stock, float):
+        stock = int(stock)
+
     product_doc = {
         "vendor_id": vendor["_id"],
         "name": name,
@@ -237,28 +287,15 @@ async def create_product(
     }
 
     result = await db["products"].insert_one(product_doc)
-    product_doc["id"] = str(result.inserted_id)
-    return product_doc
-
-@router.get("/products", response_model=List[schemas.ProductOut])
-async def list_all_products(db: AsyncIOMotorDatabase = Depends(get_db)):
-    if db is None:
-        raise HTTPException(status_code=500, detail="Database not connected")
     
-    products_cursor = db["products"].find({})
-    products = []
-    async for p in products_cursor:
-        products.append(
-            schemas.ProductOut(
-                id=str(p["_id"]),
-                name=p.get("name", ""),
-                description=p.get("description"),
-                price=p.get("price", 0),
-                stock=p.get("stock", 0),
-                image_url=p.get("image_url")
-            )
-        )
-    return products
+    return schemas.ProductOut(
+        id=str(result.inserted_id),
+        name=name,
+        description=description,
+        price=price,
+        stock=stock,
+        image_url=image_url
+    )
 
 @router.post("/vendors/apply", response_model=schemas.VendorOut)
 async def apply_vendor_endpoint(
@@ -354,11 +391,22 @@ async def get_vendor_products(vendor_id: str, db: AsyncIOMotorDatabase = Depends
     products_cursor = db["products"].find({"vendor_id": vendor_oid})
     products = []
     async for p in products_cursor:
-        p["id"] = str(p["_id"])
-        products.append(p)
+        # Convert stock to int if it's float
+        stock = p.get("stock", 0)
+        if isinstance(stock, float):
+            stock = int(stock)
+        
+        products.append(
+            schemas.ProductOut(
+                id=str(p["_id"]),
+                name=p.get("name", ""),
+                description=p.get("description"),
+                price=p.get("price", 0),
+                stock=stock,
+                image_url=p.get("image_url")
+            )
+        )
     return products
-
-
 
 # -------------------------
 # Admin Endpoints
@@ -375,7 +423,6 @@ async def list_pending_vendors(user=Depends(auth.require_role(["admin"])), db: A
         vendors.append(v)
     return vendors
 
-# In your store.py - modify the approve_vendor endpoint
 @router.post("/vendors/{vendor_id}/approve")
 async def approve_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"])), db: AsyncIOMotorDatabase = Depends(get_db)):
     if db is None:
