@@ -407,6 +407,26 @@ async def get_vendor_products(vendor_id: str, db: AsyncIOMotorDatabase = Depends
             )
         )
     return products
+@router.get("/vendors/my-vendor", response_model=schemas.VendorOut)
+async def get_my_vendor(
+    user=Depends(auth.require_role(["vendor"])),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """Get the vendor profile for the currently logged-in user"""
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
+    # Find the vendor that belongs to the current user
+    vendor = await db["vendors"].find_one({"user_id": str(user["_id"])})
+    
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor profile not found")
+    
+    # Convert stock values to int if they're floats
+    if 'stock' in vendor and isinstance(vendor['stock'], float):
+        vendor['stock'] = int(vendor['stock'])
+    
+    return schemas.VendorOut.from_mongo(vendor)
 
 # -------------------------
 # Admin Endpoints
