@@ -106,7 +106,8 @@ async def place_order(
     result = await db["orders"].insert_one(order_doc)
     order_doc["id"] = str(result.inserted_id)
 
-    # Notify vendor via WhatsApp
+    # Notify vendor via WhatsApp - FIXED VERSION
+    vendor_notified = False
     vendor = await db["vendors"].find_one({"_id": ObjectId(product["vendor_id"])})
     if vendor and vendor.get("whatsapp"):
         msg = (
@@ -118,10 +119,8 @@ async def place_order(
             f"📱 Mobile: {order_doc['mobile']}\n"
             f"📍 Address: {order_doc['address']}"
         )
-        whatsapp_sent = await send_whatsapp(vendor["whatsapp"], msg)
-
-    # Include in response
-    order_doc["vendor_notified"] = whatsapp_sent
+        vendor_notified = await send_whatsapp(vendor["whatsapp"], msg)
+        print(f"WhatsApp notification sent: {vendor_notified}")  # Debug log
 
     return {
         "id": order_doc["id"],
@@ -133,7 +132,8 @@ async def place_order(
         "mobile": order_doc["mobile"],
         "address": order_doc["address"],
         "status": order_doc["status"],
-        "remaining_stock": new_stock
+        "remaining_stock": new_stock,
+        "vendor_notified": vendor_notified  # This tells you if WhatsApp was sent
     }
 
 @router.get("/products/{product_id}", response_model=schemas.ProductOut)
