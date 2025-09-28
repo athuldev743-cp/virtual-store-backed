@@ -132,6 +132,18 @@ async def place_order(
         "status": order_doc["status"],
         "remaining_stock": new_stock
     }
+@router.get("/products/{product_id}", response_model=schemas.ProductOut)
+async def get_product(product_id: str, db: AsyncIOMotorDatabase = Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    try:
+        product = await db["products"].find_one({"_id": ObjectId(product_id)})
+    except:
+        raise HTTPException(status_code=400, detail="Invalid product ID")
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    product["id"] = str(product["_id"])
+    return product
 
 # -------------------------
 # Vendor Endpoints
@@ -345,6 +357,8 @@ async def get_vendor_products(vendor_id: str, db: AsyncIOMotorDatabase = Depends
         p["id"] = str(p["_id"])
         products.append(p)
     return products
+
+
 
 # -------------------------
 # Admin Endpoints
