@@ -1,8 +1,8 @@
 # app/models.py
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from typing import Optional
+import re
 from bson import ObjectId
-
 # -------------------------
 # Helper for ObjectId
 # -------------------------
@@ -77,30 +77,47 @@ class VendorOut(BaseModel):
 # -------------------------
 # Product Schemas
 # -------------------------
+# -----------------------
+# Product Schemas
+# -----------------------
 class ProductCreate(BaseModel):
     name: str
-    description: Optional[str]
+    description: Optional[str] = None
     price: float
     stock: int
 
     model_config = ConfigDict(from_attributes=True)
 
-
-class ProductOut(ProductCreate):
+class ProductOut(BaseModel):
     id: str
-    vendor_id: str
+    name: str
+    description: Optional[str] = None
+    price: float
+    stock: int
+    image_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
+    # Handle both float conversion and ObjectId conversion
+    @field_validator('stock', 'id', mode='before')
+    @classmethod
+    def convert_types(cls, v, info):
+        if info.field_name == 'stock' and isinstance(v, float):
+            return int(v)
+        if info.field_name == 'id' and isinstance(v, ObjectId):
+            return str(v)
+        return v
 
-# -------------------------
-# Order Schemas
-# -------------------------
-class OrderCreate(BaseModel):
-    product_id: str
-    quantity: int = 1
-
-    model_config = ConfigDict(from_attributes=True)
+    @classmethod
+    def from_mongo(cls, doc):
+        return cls(
+            id=doc.get("_id"),
+            name=doc.get("name"),
+            description=doc.get("description"),
+            price=doc.get("price"),
+            stock=doc.get("stock"),
+            image_url=doc.get("image_url")
+        )
 
 
 class OrderOut(BaseModel):

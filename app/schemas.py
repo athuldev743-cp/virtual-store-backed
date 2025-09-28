@@ -160,21 +160,4 @@ class OrderOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    @classmethod
-    def from_mongo(cls, doc):
-        mobile = doc.get("mobile")
-        if mobile and mobile.startswith("whatsapp:"):
-            mobile = mobile.replace("whatsapp:", "")
-        return cls(
-            id=oid_str(doc.get("_id")),
-            product_id=oid_str(doc.get("product_id")),
-            customer_id=oid_str(doc.get("customer_id")),
-            vendor_id=oid_str(doc.get("vendor_id")),
-            quantity=doc.get("quantity"),
-            total=doc.get("total"),
-            status=doc.get("status", "pending"),
-            remaining_stock=doc.get("remaining_stock"),
-            mobile=mobile,
-            address=doc.get("address"),
-        )
 
