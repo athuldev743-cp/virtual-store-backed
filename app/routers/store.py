@@ -187,14 +187,15 @@ async def list_all_products(db: AsyncIOMotorDatabase = Depends(get_db)):
 async def update_product(
     request: Request,
     product_id: str,
-    name: str,
-    description: str,
-    price: float,
-    stock: int,
+    name: str = Form(...),           # ADD Form()
+    description: str = Form(...),    # ADD Form()
+    price: float = Form(...),        # ADD Form()
+    stock: int = Form(...),          # ADD Form()
     file: Optional[UploadFile] = File(None),
     user=Depends(auth.require_role(["vendor"])),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
+    # ... rest of your code remains the same
     if db is None:
         raise HTTPException(status_code=500, detail="Database not connected")
     
