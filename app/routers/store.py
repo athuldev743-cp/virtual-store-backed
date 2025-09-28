@@ -230,6 +230,45 @@ async def update_product(
         image_url=updated_product.get("image_url")
     )
 
+# Add this right after your existing routes, before the last closing brace
+
+@router.post("/debug/test-whatsapp")
+async def test_whatsapp_direct():
+    """Test WhatsApp sending directly to the vendor"""
+    from app.utils.twilio_utils import send_whatsapp
+    
+    vendor_whatsapp = "whatsapp:+917034306102"  # The actual vendor number
+    test_message = "🛒 TEST: New Order Received!\nProduct: Coconut oil\nQuantity: 1.5 kg\nTotal: ₹450"
+    
+    print(f"Attempting to send WhatsApp to: {vendor_whatsapp}")
+    result = await send_whatsapp(vendor_whatsapp, test_message)
+    print(f"WhatsApp send result: {result}")
+    
+    return {
+        "success": result,
+        "to": vendor_whatsapp,
+        "message": test_message,
+        "twilio_configured": True
+    }
+
+@router.get("/debug/vendor/{vendor_id}")
+async def debug_vendor(vendor_id: str, db: AsyncIOMotorDatabase = Depends(get_db)):
+    """Debug endpoint to check vendor data"""
+    try:
+        vendor = await db["vendors"].find_one({"_id": ObjectId(vendor_id)})
+        if not vendor:
+            return {"error": "Vendor not found", "vendor_id": vendor_id}
+        
+        return {
+            "vendor_id": str(vendor["_id"]),
+            "shop_name": vendor.get("shop_name"),
+            "whatsapp": vendor.get("whatsapp"),
+            "status": vendor.get("status"),
+            "has_whatsapp": bool(vendor.get("whatsapp"))
+        }
+    except Exception as e:
+        return {"error": str(e), "vendor_id": vendor_id}
+
 @router.delete("/products/{product_id}")
 async def delete_product(
     product_id: str,
