@@ -62,11 +62,12 @@ async def debug_versions():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],   # ✔ FIXED
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Error middleware
 @app.middleware("http")
