@@ -19,6 +19,13 @@ from pathlib import Path
 import cloudinary 
 import cloudinary.uploader
 import cloudinary.api
+from app.schemas import (
+    OrderCreate, 
+    OrderOut, 
+    PaymentConfirm,
+    UPIOrderCreate,
+    PaymentResponse
+)
 
 router = APIRouter(tags=["Store"])
 
@@ -58,18 +65,54 @@ def upload_to_cloudinary(file: UploadFile, folder: str = "virtual_store") -> str
         print("Cloudinary upload failed:", e)
         return None
 
+async def create_upi_payment_order(order_id: str, amount: float, customer_id: str, db: AsyncIOMotorDatabase):
+    """Helper function to create UPI payment order"""
+    try:
+        # Get UPI configuration from environment
+        UPI_ID = os.getenv("UPI_ID", "yourupi@bank")
+        STORE_NAME = os.getenv("STORE_NAME", "Virtual Store")
+        
+        # Generate unique UPI order ID
+        upi_order_id = f"UPI{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        
+        # Create UPI order document
+        upi_order = {
+            "order_id": order_id,
+            "upi_order_id": upi_order_id,
+            "amount": amount,
+            "customer_id": ObjectId(customer_id),
+            "status": "pending",
+            "upi_id": UPI_ID,
+            "store_name": STORE_NAME,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
+        
+        # Insert into database
+        await db["upi_orders"].insert_one(upi_order)
+        
+        # Generate UPI payment link
+        encoded_store_name = STORE_NAME.replace(" ", "%20")
+        upi_link = f"upi://pay?pa={UPI_ID}&pn={encoded_store_name}&am={amount:.2f}&cu=INR&tn=Order {order_id}"
+        
+        return {
+            "upi_order_id": upi_order_id,
+            "upi_link": upi_link,
+            "amount": amount,
+            "status": "pending"
+        }
+        
+    except Exception as e:
+        print(f"UPI payment order creation failed: {str(e)}")
+        return None
+
 # -------------------------
 # Customer Endpoints
 # -------------------------
-class OrderCreate(BaseModel):
-    product_id: str
-    quantity: float = Field(..., gt=0)
-    mobile: Optional[str] = None
-    address: Optional[str] = None
 
 @router.post("/orders")
 async def place_order(
-    order: OrderCreate,
+    order: OrderCreate,  # This now uses the imported OrderCreate from schemas.py
     user=Depends(auth.require_role(["customer"])),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
@@ -91,38 +134,53 @@ async def place_order(
     new_stock = product_stock - order.quantity
     await db["products"].update_one({"_id": ObjectId(order.product_id)}, {"$set": {"stock": new_stock}})
 
+    # Calculate total
+    total_amount = product["price"] * order.quantity
+
+    # ✅ UPDATED: Include payment_method and payment_status
     order_doc = {
         "product_id": str(product["_id"]),
         "vendor_id": str(product["vendor_id"]),
         "customer_id": str(user["_id"]),
         "quantity": order.quantity,
-        "total": product["price"] * order.quantity,
+        "total": total_amount,
         "created_at": datetime.utcnow(),
-        "mobile": order.mobile or user.get("whatsapp", "N/A"),
+        "mobile": order.mobile or user.get("mobile", "N/A"),
         "address": order.address or user.get("address", "N/A"),
-        "status": "pending"
+        "status": "pending",
+        "payment_method": order.payment_method,  # ✅ ADD THIS
+        "payment_status": "pending" if order.payment_method == "upi" else "not_required"  # ✅ ADD THIS
     }
 
     result = await db["orders"].insert_one(order_doc)
-    order_doc["id"] = str(result.inserted_id)
+    order_id = str(result.inserted_id)
+    order_doc["id"] = order_id
 
-    # Notify vendor via WhatsApp - FIXED VERSION
+    # ✅ ADD THIS: Create UPI payment if payment method is UPI
+    upi_data = None
+    if order.payment_method == "upi":
+        upi_data = await create_upi_payment_order(order_id, total_amount, str(user["_id"]), db)
+
+    # Notify vendor via WhatsApp
     vendor_notified = False
     vendor = await db["vendors"].find_one({"_id": ObjectId(product["vendor_id"])})
     if vendor and vendor.get("whatsapp"):
+        payment_info = "💳 Payment: UPI (Pending)" if order.payment_method == "upi" else "💰 Payment: Cash on Delivery"
+        
         msg = (
             f"🛒 *New Order Received!*\n\n"
             f"📦 Product: {product['name']}\n"
             f"⚖️ Quantity: {order.quantity} kg\n"
-            f"💰 Total: ₹{product['price'] * order.quantity:.2f}\n\n"
+            f"💰 Total: ₹{total_amount:.2f}\n"
+            f"{payment_info}\n\n"
             f"👤 Customer: {user.get('username', 'N/A')}\n"
             f"📱 Mobile: {order_doc['mobile']}\n"
             f"📍 Address: {order_doc['address']}"
         )
         vendor_notified = await send_whatsapp(vendor["whatsapp"], msg)
-        print(f"WhatsApp notification sent: {vendor_notified}")  # Debug log
+        print(f"WhatsApp notification sent: {vendor_notified}")
 
-    return {
+    response_data = {
         "id": order_doc["id"],
         "product_id": order_doc["product_id"],
         "vendor_id": order_doc["vendor_id"],
@@ -132,9 +190,102 @@ async def place_order(
         "mobile": order_doc["mobile"],
         "address": order_doc["address"],
         "status": order_doc["status"],
+        "payment_method": order_doc["payment_method"],  # ✅ ADD THIS
+        "payment_status": order_doc["payment_status"],  # ✅ ADD THIS
         "remaining_stock": new_stock,
-        "vendor_notified": vendor_notified  # This tells you if WhatsApp was sent
+        "vendor_notified": vendor_notified
     }
+
+    # ✅ ADD THIS: Include UPI payment data if applicable
+    if upi_data:
+        response_data["upi_payment"] = upi_data
+
+    return response_data
+    
+@router.post("/orders/{order_id}/confirm-payment")
+async def confirm_order_payment(
+    order_id: str,
+    payment_data: PaymentConfirm,
+    user=Depends(auth.require_role(["customer"])),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """Confirm UPI payment for an order"""
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    
+    # Verify the order exists and belongs to the user
+    order = await db["orders"].find_one({"_id": ObjectId(order_id)})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order["customer_id"] != str(user["_id"]):
+        raise HTTPException(status_code=403, detail="Not authorized to confirm this order")
+    
+    # Verify payment method is UPI
+    if order.get("payment_method") != "upi":
+        raise HTTPException(status_code=400, detail="This order is not a UPI payment order")
+    
+    # Verify amount matches
+    if abs(order["total"] - payment_data.amount) > 0.01:  # Allow small floating point differences
+        raise HTTPException(status_code=400, detail="Amount mismatch")
+    
+    try:
+        # Find UPI order
+        upi_order = await db["upi_orders"].find_one({"order_id": order_id})
+        if not upi_order:
+            raise HTTPException(status_code=404, detail="UPI payment order not found")
+        
+        # Update UPI order status
+        await db["upi_orders"].update_one(
+            {"order_id": order_id},
+            {
+                "$set": {
+                    "status": "paid",
+                    "transaction_id": payment_data.transaction_id,
+                    "paid_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
+        
+        # Update main order payment status
+        await db["orders"].update_one(
+            {"_id": ObjectId(order_id)},
+            {
+                "$set": {
+                    "payment_status": "paid",
+                    "status": "confirmed",
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
+        
+        # Notify vendor about payment confirmation
+        vendor_notified = False
+        vendor = await db["vendors"].find_one({"_id": ObjectId(order["vendor_id"])})
+        if vendor and vendor.get("whatsapp"):
+            product = await db["products"].find_one({"_id": ObjectId(order["product_id"])})
+            product_name = product["name"] if product else "Unknown Product"
+            
+            msg = (
+                f"✅ *Payment Confirmed!*\n\n"
+                f"📦 Order: {order_id}\n"
+                f"🛍️ Product: {product_name}\n"
+                f"💰 Amount: ₹{payment_data.amount:.2f}\n"
+                f"🔗 Transaction ID: {payment_data.transaction_id or 'Not provided'}\n\n"
+                f"Please proceed with order fulfillment."
+            )
+            vendor_notified = await send_whatsapp(vendor["whatsapp"], msg)
+        
+        return {
+            "success": True,
+            "message": "Payment confirmed successfully",
+            "order_id": order_id,
+            "vendor_notified": vendor_notified
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Payment confirmation failed: {str(e)}")    
 
 @router.get("/products/{product_id}", response_model=schemas.ProductOut)
 async def get_product(product_id: str, db: AsyncIOMotorDatabase = Depends(get_db)):
@@ -446,6 +597,7 @@ async def get_vendor_products(vendor_id: str, db: AsyncIOMotorDatabase = Depends
             )
         )
     return products
+
 @router.get("/vendors/my-vendor", response_model=schemas.VendorOut)
 async def get_my_vendor(
     user=Depends(auth.require_role(["vendor"])),
@@ -529,3 +681,13 @@ async def reject_vendor(vendor_id: str, user=Depends(auth.require_role(["admin"]
         asyncio.create_task(send_whatsapp(user_doc.get("whatsapp"), "Your vendor application has been rejected. You can reapply later."))
 
     return {"detail": f"Vendor {vendor_id} rejected"}
+
+# Add this to your main.py or store.py for testing
+@router.get("/debug/check-order-schema")
+async def debug_check_order_schema():
+    from app.schemas import OrderCreate
+    return {
+        "order_create_fields": list(OrderCreate.model_fields.keys()),
+        "has_payment_method": "payment_method" in OrderCreate.model_fields,
+        "file_location": __file__
+    }

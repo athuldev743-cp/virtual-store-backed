@@ -173,8 +173,11 @@ class OrderCreate(BaseModel):
     quantity: float
     mobile: Optional[str] = None
     address: Optional[str] = None
+    payment_method: str  # "upi" or "cod"
+    payment_status: Optional[str] = "pending"  # ✅ Add default value
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class OrderOut(BaseModel):
     id: str
