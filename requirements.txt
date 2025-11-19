@@ -12,4 +12,3 @@ pytest==7.4.2
 twilio==9.8.1
 redis==6.4.0
 cloudinary==1.44.1
-hashlib
