@@ -11,44 +11,58 @@ router = APIRouter(tags=["Users"])
 async def signup(user: schemas.UserCreate, db: AsyncIOMotorDatabase = Depends(get_db)):
     if db is None:
         raise RuntimeError("Database not connected")
+    
     email = (user.email or "").strip().lower()
-    print(f"[DEBUG] Signup payload: {user}")
+    
+    # Add password validation
+    if len(user.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+    
+    if not any(char.isdigit() for char in user.password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one number")
+    
+    if not any(char.isupper() for char in user.password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one uppercase letter")
+    
+    if not any(char.islower() for char in user.password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one lowercase letter")
 
     existing = await db["users"].find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
     try:
-        print(f"[DEBUG] Before hash_password call")
-        print(f"[DEBUG] Password length: {len(user.password)} chars, {len(user.password.encode('utf-8'))} bytes")
+        # Add more debugging
+        print(f"[DEBUG] Password to hash: '{user.password}'")
+        print(f"[DEBUG] Password type: {type(user.password)}")
         
-        # Test the hash_password function directly
-        test_hash = hash_password(user.password)
-        print(f"[DEBUG] hash_password succeeded: {test_hash[:50]}...")
-        
+        hashed_password = hash_password(user.password)
+        print(f"[DEBUG] Hashed password type: {type(hashed_password)}")
+        print(f"[DEBUG] Hashed password sample: {str(hashed_password)[:50]}")
+
+        # Ensure it's a string
+        if not isinstance(hashed_password, str):
+            hashed_password = str(hashed_password)
+            
         user_dict = {
             "username": user.username,
             "email": email,
-            "password": test_hash,  # Use the already hashed password
+            "password": hashed_password,
             "mobile": user.mobile or "",
             "address": user.address or "",
             "role": "customer",
         }
 
         result = await db["users"].insert_one(user_dict)
-        print(f"[DEBUG] Inserted user ID: {result.inserted_id}")
-
+        
         token_data = {"sub": str(result.inserted_id), "role": "customer", "email": email}
         access_token = auth.create_access_token(token_data)
         return {"access_token": access_token, "token_type": "bearer"}
 
     except Exception as e:
-        print(f"[DEBUG] ERROR TYPE: {type(e)}")
-        print(f"[DEBUG] ERROR MESSAGE: {str(e)}")
-        import traceback
-        print(f"[DEBUG] FULL TRACEBACK:")
+        print(f"[DEBUG] ERROR during signup: {type(e).__name__}: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error during registration")
 
 
 @router.post("/login", response_model=schemas.Token)
