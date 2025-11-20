@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
+from datetime import datetime
 
 from app.database import connect_db, close_db
 from app.routers import users, store, payment  # FIX: Added payment router
@@ -116,7 +117,15 @@ async def startup_event():
 async def shutdown_event():
     await close_db()
     print("Database disconnected ✅")
-
+@app.get("/health")
+async def health_check():
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "OK", 
+            "timestamp": datetime.now().isoformat()
+        }
+    )
 
 if __name__ == "__main__":
     import uvicorn
