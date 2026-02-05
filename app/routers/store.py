@@ -565,35 +565,29 @@ async def list_approved_vendors(db: AsyncIOMotorDatabase = Depends(get_db)):
         vendors.append(v)
     return vendors
 
-@router.get("/vendors/{vendor_id}/products", response_model=List[schemas.ProductOut])
-async def get_vendor_products(vendor_id: str, db: AsyncIOMotorDatabase = Depends(get_db)):
-    if db is None:
-        raise HTTPException(status_code=500, detail="Database not connected")
-    
-    try:
-        vendor_oid = ObjectId(vendor_id)
-    except InvalidId:
-        raise HTTPException(status_code=400, detail="Invalid vendor_id")
+@router.get("/vendor/products", response_model=List[schemas.ProductOut])
+async def my_products(
+    user=Depends(auth.require_role(["vendor"])),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    vendor = await db["vendors"].find_one({"user_id": str(user["_id"]), "status": "approved"})
+    if not vendor:
+        raise HTTPException(status_code=403, detail="Vendor not approved")
 
-    products_cursor = db["products"].find({"vendor_id": vendor_oid})
+    products_cursor = db["products"].find({"vendor_id": vendor["_id"]})
     products = []
     async for p in products_cursor:
-        # Convert stock to int if it's float
-        stock = p.get("stock", 0)
-        if isinstance(stock, float):
-            stock = int(stock)
-        
-        products.append(
-            schemas.ProductOut(
-                id=str(p["_id"]),
-                name=p.get("name", ""),
-                description=p.get("description"),
-                price=p.get("price", 0),
-                stock=stock,
-                image_url=p.get("image_url")
-            )
-        )
+        stock = int(p.get("stock", 0))
+        products.append(schemas.ProductOut(
+            id=str(p["_id"]),
+            name=p.get("name", ""),
+            description=p.get("description"),
+            price=p.get("price", 0),
+            stock=stock,
+            image_url=p.get("image_url"),
+        ))
     return products
+
 
 @router.get("/vendors/my-vendor", response_model=schemas.VendorOut)
 async def get_my_vendor(

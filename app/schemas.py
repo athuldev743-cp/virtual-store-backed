@@ -17,8 +17,8 @@ def oid_str(oid: ObjectId) -> Optional[str]:
 class UserCreate(BaseModel):
     username: str
     email: EmailStr
-    mobile: Optional[str] = None       # ✅ replaced whatsapp with mobile
-    address: Optional[str] = None      # ✅ new field
+    mobile: Optional[str] = None      
+    address: Optional[str] = None     
     password: str
 
     model_config = ConfigDict(from_attributes=True)
